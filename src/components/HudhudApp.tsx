@@ -8,6 +8,7 @@ import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVis
 import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
 import DallniFeedback, { DallniStatsSheet } from "./DallniFeedback";
+import DallniLogo from "./DallniLogo";
 import { CategoryIcon } from "./icons";
 import FeedbackFlow from "./FeedbackFlow";
 import MapView from "./map/MapView";
@@ -451,9 +452,12 @@ export default function HudhudApp() {
           <button
             onClick={() => setPanelOpen((o) => !o)}
             aria-pressed={panelOpen}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition ${panelOpen ? "bg-brand-500 ring-2 ring-brand-100" : "bg-gradient-to-l from-brand-500 to-teal-400 hover:brightness-105"}`}
+            className={`inline-flex items-center gap-1.5 rounded-xl border py-1 pe-3 ps-1.5 text-sm font-bold text-brand-700 shadow-sm transition ${panelOpen ? "border-brand-500 bg-brand-100" : "border-brand-100 bg-brand-50 hover:border-brand-500"}`}
           >
-            <Sparkles className="size-4" aria-hidden /> دلّني
+            <span className="flex h-7 w-8 items-center justify-center">
+              <DallniLogo variant="icon" className="h-7 w-auto" priority sizes="40px" />
+            </span>
+            دلّني
           </button>
           <ThemeToggle />
           <button onClick={() => setStatsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="مؤشرات دلّني" title="مؤشرات دلّني">
@@ -546,9 +550,10 @@ export default function HudhudApp() {
         }`}
       >
         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
-          <h2 className="inline-flex items-center gap-1.5 font-bold">
-            <Sparkles className="size-4 text-brand-600" aria-hidden /> دلّني
-            <span className="text-xs font-normal text-muted">مساعدك الذكي لطلعاتك</span>
+          <h2 className="flex items-center gap-2">
+            <DallniLogo className="h-[72px] w-auto" sizes="80px" />
+            <span className="sr-only">دلّني</span>
+            <span className="text-xs text-muted">مساعدك الذكي لطلعاتك في هدهد</span>
           </h2>
           <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="إغلاق دلّني">
             <X className="size-4" />
@@ -579,6 +584,12 @@ export default function HudhudApp() {
                     onRemove={removeStop}
                     onStart={startPlanTrip}
                   />
+                </div>
+              ) : messages.length <= 1 ? (
+                // welcome screen
+                <div className="flex flex-col items-center pb-2 pt-4 text-center">
+                  <DallniLogo className="h-40 w-auto" sizes="180px" />
+                  <p className="mt-2 text-sm text-muted">قول لي وش ودك تسوي، وأنا أرتب لك طلعتك على الخريطة.</p>
                 </div>
               ) : null
             }

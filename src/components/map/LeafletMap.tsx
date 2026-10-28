@@ -6,12 +6,14 @@ import { CATEGORY_META } from "@/lib/catalog";
 import type { MapProps } from "./MapView";
 import { pinHtml } from "./pin";
 
-export default function LeafletMap({ origin, stops, alternatives, path, selectedId, onSelect }: MapProps) {
+export default function LeafletMap({ origin, originLabel = "موقعك", stops, alternatives, path, selectedId, onSelect, fitKey, onMapClick }: MapProps) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
 
   useEffect(() => {
     if (!el.current || map.current) return;
@@ -21,7 +23,12 @@ export default function LeafletMap({ origin, stops, alternatives, path, selected
       maxZoom: 19,
     }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
+    map.current.on("click", (e: L.LeafletMouseEvent) => onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng }));
+    // the container changes size when دلّني opens/closes — keep tiles and bounds correct
+    const ro = new ResizeObserver(() => map.current?.invalidateSize());
+    ro.observe(el.current);
     return () => {
+      ro.disconnect();
       map.current?.remove();
       map.current = null;
     };
@@ -33,7 +40,7 @@ export default function LeafletMap({ origin, stops, alternatives, path, selected
     if (!m || !g) return;
     g.clearLayers();
     L.circleMarker([origin.lat, origin.lng], { radius: 8, color: "#fff", weight: 3, fillColor: "#2f80ed", fillOpacity: 1 })
-      .bindTooltip("موقعك")
+      .bindTooltip(originLabel)
       .addTo(g);
     if (path.length > 1) {
       L.polyline(path.map((p) => [p.lat, p.lng]), { color: "#fff", weight: 9, opacity: 0.9 }).addTo(g);
@@ -55,18 +62,22 @@ export default function LeafletMap({ origin, stops, alternatives, path, selected
         .on("click", () => onSelectRef.current(p))
         .addTo(g);
     });
-  }, [origin, stops, alternatives, path, selectedId]);
+  }, [origin, originLabel, stops, alternatives, path, selectedId]);
 
-  // Refit only when the set of chosen stops changes, not on selection.
-  const key = stops.map((s) => s.id).join("|") + alternatives.length;
+  useEffect(() => {
+    el.current?.classList.toggle("cursor-crosshair", Boolean(onMapClick));
+  }, [onMapClick]);
+
+  // Refit only when the set of chosen stops changes, not on selection or live position updates.
+  const key = fitKey ?? `${stops.map((s) => s.id).join("|")}${alternatives.length}@${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}`;
   useEffect(() => {
     const m = map.current;
     if (!m) return;
-    const pts = [origin, ...stops.map((s) => s.location), ...alternatives.map((a) => a.location)];
+    const pts = [origin, ...stops.map((s) => s.location), ...alternatives.map((a) => a.location), ...(path.length > 1 ? [path[0], path[path.length - 1]] : [])];
     if (pts.length > 1) m.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])), { padding: [60, 60], maxZoom: 15 });
     else m.setView([origin.lat, origin.lng], 12);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, origin]);
+  }, [key]);
 
   return <div ref={el} className="h-full w-full" />;
 }

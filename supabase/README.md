@@ -11,7 +11,9 @@ The app reads and writes the **`hudhud_demo`** schema of the *Hudhud AI* project
    Each browser gets an anonymous Supabase user, so reviews, visits, feedback and preferences are
    owned by `auth.uid()`. Without it the app keeps those in the browser and labels them as local.
 
-No SQL migration is needed: the seed already defines the grants and RLS the app relies on.
+The seed defines the base grants and RLS. One migration was added on top:
+[`migrations/20261029_dallni_assistant_feedback.sql`](migrations/20261029_dallni_assistant_feedback.sql)
+(the `assistant_feedback` table with owner-only RLS, and the aggregate-only `dallni_stats()` function).
 
 ## Access model (verified)
 
@@ -19,7 +21,8 @@ No SQL migration is needed: the seed already defines the grants and RLS the app 
 |---|---|---|
 | `places` | SELECT (all rows) | SELECT |
 | `reviews` | SELECT only where `is_published AND publish_consent` | own rows only (`user_id = auth.uid()`) |
-| `user_preferences`, `visits`, `feedback`, `outing_plans`, `outing_stops` | no access | own rows only |
+| `user_preferences`, `visits`, `feedback`, `outing_plans`, `outing_stops`, `assistant_feedback` | no access | own rows only |
+| `dallni_stats()` (function) | aggregate counts only | aggregate counts only |
 
 The browser only ever holds the **publishable** key. No service-role key is used anywhere.
 

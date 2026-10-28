@@ -1,5 +1,5 @@
 "use client";
-import { BadgeCheck, Clock, MapPin, Plus, Star, X } from "lucide-react";
+import { BadgeCheck, Clock, MapPin, Navigation, Plus, Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listReviews } from "@/lib/store";
 import type { Place, Review } from "@/lib/types";
@@ -9,7 +9,7 @@ import { DemoBadge, PlacePhoto, Price, Spinner, Stars, TagChips, typeLabel } fro
 const EXP_LABEL = { excellent: "ممتازة", average: "عادية", bad: "سيئة" };
 
 /** Place details: info, the dataset's seeded rating, and our users' published reviews — kept separate. */
-export default function PlaceSheet({ place, onClose, onAddToPlan }: { place: Place; onClose: () => void; onAddToPlan?: () => void }) {
+export default function PlaceSheet({ place, onClose, onAddToPlan, onStartTrip }: { place: Place; onClose: () => void; onAddToPlan?: () => void; onStartTrip?: () => void }) {
   const [fresh, setFresh] = useState<Place | null>(null);
   const [ours, setOurs] = useState<Review[] | null>(null);
 
@@ -29,7 +29,7 @@ export default function PlaceSheet({ place, onClose, onAddToPlan }: { place: Pla
       <div onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface md:max-w-lg md:rounded-3xl">
         <div className="relative">
           <PlacePhoto place={p} className="h-48 w-full" />
-          <button onClick={onClose} className="absolute left-3 top-3 flex size-9 items-center justify-center rounded-full bg-white/90 shadow" aria-label="إغلاق">
+          <button onClick={onClose} className="absolute left-3 top-3 flex size-9 items-center justify-center rounded-full bg-surface/90 shadow" aria-label="إغلاق">
             <X className="size-5" />
           </button>
         </div>
@@ -61,6 +61,18 @@ export default function PlaceSheet({ place, onClose, onAddToPlan }: { place: Pla
             <p className="rounded-lg bg-amber-50 p-2 text-[11px] leading-5 text-amber-900">
               هذا مكان تجريبي من بيانات مولّدة لأغراض العرض. الاسم والموقع والتقييم الأساسي ليست لمنشأة حقيقية، والصورة توضيحية لنوع المكان.
             </p>
+          )}
+
+          {onStartTrip && (
+            <section aria-label="التنقل" className="space-y-2 rounded-2xl border border-brand-100 bg-brand-50 p-3">
+              <button onClick={onStartTrip} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 text-base font-bold text-white shadow-sm hover:bg-brand-600">
+                <Navigation className="size-5" aria-hidden /> ابدأ الرحلة
+              </button>
+              <p className="text-center text-[11px] text-muted">
+                نحدد موقعك الحالي (أو تختار نقطة البداية) ونحسب مسار على الطرق داخل هدهد.
+                {p.isDemo && " الوجهة موقع تجريبي بإحداثيات مولّدة."}
+              </p>
+            </section>
           )}
 
           <div className="grid grid-cols-2 gap-2 text-center">

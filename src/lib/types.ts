@@ -74,12 +74,17 @@ export type PlanStop = {
 
 export type RouteLeg = { distanceMeters: number; durationSeconds?: number };
 
+/** One basic guidance instruction from the routing service. */
+export type NavStep = { text: string; distanceMeters: number };
+
 export type RouteResult = {
   path: LatLng[];
   legs: RouteLeg[];
   distanceMeters: number;
-  durationSeconds?: number; // only from Google Routes — never estimated
-  source: "google" | "straight_line";
+  durationSeconds?: number; // only when a routing service returned it — never estimated
+  source: "google" | "osrm" | "straight_line";
+  steps?: NavStep[];
+  error?: string; // why road routing failed, when we fell back to straight lines
 };
 
 export type Plan = {

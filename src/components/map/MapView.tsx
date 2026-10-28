@@ -9,6 +9,11 @@ export type MapProps = {
   path: LatLng[];
   selectedId?: string;
   onSelect: (p: Place) => void;
+  originLabel?: string;
+  /** Refit the view only when this changes (defaults to the set of shown places). */
+  fitKey?: string;
+  /** When set, a tap on the map reports its coordinates (e.g. choosing a trip start point). */
+  onMapClick?: (p: LatLng) => void;
 };
 
 const LeafletMap = dynamic(() => import("./LeafletMap"), { ssr: false });

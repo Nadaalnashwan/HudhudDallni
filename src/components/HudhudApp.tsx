@@ -1,18 +1,21 @@
 "use client";
-import { Bird, Brain, Check, Database, FastForward, FlaskConical, LocateFixed, Settings, Sparkles, TriangleAlert, X } from "lucide-react";
+import { BarChart3, Bird, Brain, Check, Database, FlaskConical, LocateFixed, Settings, Sparkles, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
 import { formatKm, RIYADH_CENTER } from "@/lib/geo";
-import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, savePlan, savePreferences, saveVisits, storeStatus, type StoreStatus } from "@/lib/store";
+import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, markDallniAsked, savePlan, savePreferences, saveVisits, shouldAskDallni, storeStatus, type StoreStatus } from "@/lib/store";
 import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
+import DallniFeedback, { DallniStatsSheet } from "./DallniFeedback";
 import { CategoryIcon } from "./icons";
 import FeedbackFlow from "./FeedbackFlow";
 import MapView from "./map/MapView";
 import PlaceCard from "./PlaceCard";
 import PlaceSheet from "./PlaceSheet";
 import PlanPipeline from "./PlanPipeline";
+import ThemeToggle from "./ThemeToggle";
+import { TripPanel, useTrip } from "./TripNavigator";
 import { typeLabel } from "./ui";
 
 const VISIT_DELAY_MS = 30 * 60 * 1000; // ask about a visit 30 min after the outing started
@@ -20,7 +23,7 @@ const uid = () => crypto.randomUUID();
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  text: "هلا والله! أنا مساعد هدهد الذكي.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
+  text: "هلا والله! أنا دلّني، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
 const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
 
@@ -56,9 +59,13 @@ export default function HudhudApp() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [feedbackOn, setFeedbackOn] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false); // map first; دلّني opens on demand
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
+  const [dallniAsk, setDallniAsk] = useState<{ planId?: string } | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const tripApi = useTrip();
+  const trip = tripApi.trip;
 
   const say = (m: Omit<ChatMessage, "id">) => setMessages((x) => [...x, { id: uid(), ...m }]);
 
@@ -335,34 +342,54 @@ export default function HudhudApp() {
   };
 
   // --- outing + post-visit feedback
-  const startOuting = () => {
-    if (!plan) return;
-    const started = { ...plan, startedAt: new Date().toISOString() };
-    setPlan(started);
-    savePlan(started);
-    const v: Visit[] = started.stops.map((s) => ({
-      placeId: s.place.id,
-      placeName: s.place.name,
-      category: s.step.category,
-      subcategory: s.place.subcategory,
-      district: s.place.district,
-      source: s.place.source,
-      planId: started.id,
-      status: "pending",
-    }));
+  const visitOf = (p: Place, planId: string): Visit => ({
+    placeId: p.id,
+    placeName: p.name,
+    category: p.category,
+    subcategory: p.subcategory,
+    district: p.district,
+    source: p.source,
+    planId,
+    status: "pending",
+  });
+
+  /** "ابدأ الرحلة": in-app navigation through the stops in the user's order, from `index`. */
+  const startTrip = (stops: Place[], index = 0, planId?: string) => {
+    setDetails(null);
+    setFocus(null);
+    if (!window.matchMedia("(min-width: 768px)").matches) setPanelOpen(false);
+    const key = planId ?? uid();
+    if (plan && planId === plan.id) {
+      const started = { ...plan, startedAt: plan.startedAt ?? new Date().toISOString() };
+      setPlan(started);
+      savePlan(started);
+    }
+    const v = stops.slice(index).map((p) => visitOf(p, key));
     setVisits(v);
     saveVisits(v);
-    say({ role: "assistant", text: "بالتوفيق في طلعتك! المسار على الخريطة، ولما ترجع للتطبيق بسألك عن تجربتك." });
+    tripApi.start(stops, index, key);
   };
 
-  const finishVisit = (status: Visit["status"], message?: string) => {
-    if (!pendingVisit) return;
-    const next = visits.map((v) => (v === pendingVisit ? { ...v, status } : v));
+  const startPlanTrip = () => plan && startTrip(plan.stops.map((s) => s.place), 0, plan.id);
+
+  const finishVisit = (placeId: string, status: Visit["status"], message?: string) => {
+    const next = visits.map((v) => (v.placeId === placeId && v.status === "pending" ? { ...v, status } : v));
     setVisits(next);
     saveVisits(next);
     if (message) say({ role: "assistant", text: message });
     if (!next.some((v) => v.status === "pending")) setFeedbackOn(false);
   };
+
+  // An outing ended → once per outing (and not more than every 12 h) ask about دلّني itself.
+  useEffect(() => {
+    if (trip?.phase !== "done") return;
+    const key = trip.planId ?? trip.stops[0]?.id;
+    if (key && shouldAskDallni(key)) {
+      markDallniAsked(key);
+      setDallniAsk({ planId: trip.planId });
+    }
+    tripApi.clear();
+  }, [trip?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updatePrefs = (p: Preferences) => {
     setPrefs(p);
@@ -385,7 +412,8 @@ export default function HudhudApp() {
     const idx = plan.stops.findIndex((s) => s.place.id === p.id);
     const altIdx = plan.stops.findIndex((s) => s.alternatives.some((a) => a.id === p.id));
     setFocus({ place: p, stopIndex: idx >= 0 ? idx : altIdx });
-    setPanelOpen(false);
+    // on phones the sheet would cover the card; on desktop the side panel can stay open
+    if (!window.matchMedia("(min-width: 768px)").matches) setPanelOpen(false);
   };
   const focusedIsStop = focus && plan?.stops.some((s) => s.place.id === focus.place.id);
   const focusAnchor = plan && focus && focus.stopIndex > 0 ? plan.stops[focus.stopIndex - 1] : null;
@@ -393,12 +421,26 @@ export default function HudhudApp() {
   return (
     <div className="relative h-dvh w-full overflow-hidden">
       {/* Map */}
-      <div className="absolute inset-0 md:left-0 md:right-[420px]">
-        <MapView origin={plan?.origin ?? userOrigin.loc} stops={stopsOnMap} alternatives={altsOnMap} path={plan?.route?.path ?? []} selectedId={focus?.place.id} onSelect={selectOnMap} />
+      <div className={`absolute inset-0 ${panelOpen ? "md:right-[420px]" : ""}`}>
+        {trip && trip.phase !== "done" ? (
+          <MapView
+            origin={trip.userPos ?? trip.origin ?? userOrigin.loc}
+            originLabel={trip.userPos ? "موقعك الحالي" : trip.origin ? trip.originLabel : "موقعك"}
+            stops={trip.stops}
+            alternatives={[]}
+            path={trip.route?.path ?? []}
+            selectedId={trip.stops[trip.index].id}
+            onSelect={setDetails}
+            fitKey={`trip-${trip.index}-${trip.phase}-${trip.route?.distanceMeters ?? 0}`}
+            onMapClick={trip.phase === "need_origin" ? (p) => tripApi.setManualOrigin(p, "نقطة اخترتها على الخريطة") : undefined}
+          />
+        ) : (
+          <MapView origin={plan?.origin ?? userOrigin.loc} stops={stopsOnMap} alternatives={altsOnMap} path={plan?.route?.path ?? []} selectedId={focus?.place.id} onSelect={selectOnMap} />
+        )}
       </div>
 
       {/* Top bar (Hudhud-style search) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1000] space-y-2 p-3 md:right-[420px]">
+      <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1000] space-y-2 p-3 ${panelOpen ? "md:right-[420px]" : ""}`}>
         <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-surface p-2 shadow-lg">
           <div className="flex size-9 items-center justify-center rounded-xl bg-brand-500 text-white">
             <Bird className="size-5" aria-hidden />
@@ -406,10 +448,18 @@ export default function HudhudApp() {
           <button onClick={() => setPanelOpen(true)} className="flex-1 text-right text-sm text-muted">
             وين ودك تروح اليوم؟
           </button>
-          <button onClick={() => setPanelOpen(true)} className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-brand-500 to-teal-400 px-3 py-1.5 text-sm font-medium text-white md:hidden">
-            <Sparkles className="size-4" aria-hidden /> اسأل هدهد
+          <button
+            onClick={() => setPanelOpen((o) => !o)}
+            aria-pressed={panelOpen}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition ${panelOpen ? "bg-brand-500 ring-2 ring-brand-100" : "bg-gradient-to-l from-brand-500 to-teal-400 hover:brightness-105"}`}
+          >
+            <Sparkles className="size-4" aria-hidden /> دلّني
           </button>
-          <button onClick={() => setPrefsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="تفضيلاتي">
+          <ThemeToggle />
+          <button onClick={() => setStatsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="مؤشرات دلّني" title="مؤشرات دلّني">
+            <BarChart3 className="size-5" />
+          </button>
+          <button onClick={() => setPrefsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="تفضيلاتي" title="تفضيلاتي">
             <Settings className="size-5" />
           </button>
         </div>
@@ -454,15 +504,22 @@ export default function HudhudApp() {
             () => say({ role: "assistant", text: "ما قدرت أوصل لموقعك، بستخدم وسط الرياض." }),
           )
         }
-        className="absolute bottom-[calc(45dvh+12px)] left-3 z-[1000] flex size-11 items-center justify-center rounded-full bg-surface shadow-lg md:bottom-6"
+        className={`absolute left-3 z-[1000] flex size-11 items-center justify-center rounded-full bg-surface shadow-lg md:bottom-6 ${panelOpen ? "bottom-[calc(55dvh+12px)]" : "bottom-6"}`}
         aria-label="موقعي"
       >
         <LocateFixed className="size-5 text-brand-600" />
       </button>
 
+      {/* In-app navigation */}
+      {trip && (
+        <div className={`pointer-events-none absolute inset-x-3 bottom-6 z-[1050] mx-auto max-w-md md:left-4 md:mx-0 ${panelOpen ? "max-md:hidden md:right-[436px]" : "md:right-auto md:w-[26rem]"}`}>
+          <TripPanel api={tripApi} onCancel={tripApi.clear} />
+        </div>
+      )}
+
       {/* Selected place card on the map */}
-      {focus && (
-        <div className="absolute inset-x-3 bottom-[calc(45dvh+12px)] z-[1000] mx-auto max-w-sm md:bottom-6 md:right-[436px] md:left-auto md:w-80">
+      {focus && !trip && (
+        <div className={`absolute inset-x-3 z-[1000] mx-auto max-w-sm md:bottom-6 md:left-auto md:w-80 ${panelOpen ? "bottom-[calc(55dvh+12px)] md:right-[436px]" : "bottom-6 md:right-4"}`}>
           <button onClick={() => setFocus(null)} className="absolute -top-3 left-2 z-10 flex size-7 items-center justify-center rounded-full bg-surface shadow" aria-label="إغلاق">
             <X className="size-4" />
           </button>
@@ -480,23 +537,22 @@ export default function HudhudApp() {
       )}
 
       {/* Assistant panel: bottom sheet on mobile, side panel on desktop */}
+      {/* دلّني: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
       <aside
-        className={`absolute inset-x-0 bottom-0 z-[1100] flex flex-col rounded-t-3xl bg-surface shadow-[0_-8px_30px_rgba(0,0,0,.12)] transition-[height] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[420px] md:rounded-none ${
-          panelOpen ? "h-[45dvh]" : "h-14"
+        aria-label="دلّني"
+        aria-hidden={!panelOpen}
+        className={`absolute inset-x-0 bottom-0 z-[1100] h-[55dvh] flex-col rounded-t-3xl border-line bg-surface shadow-[0_-8px_30px_rgba(0,0,0,.12)] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[420px] md:rounded-none md:border-l ${
+          panelOpen ? "flex" : "hidden"
         }`}
       >
-        <button onClick={() => setPanelOpen((o) => !o)} className="flex items-center justify-between px-4 pb-2 pt-3 md:pointer-events-none">
-          <span className="mx-auto h-1.5 w-10 rounded-full bg-line md:hidden" />
-        </button>
-        <div className="flex items-center justify-between px-4 pb-2 max-md:-mt-2">
+        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
           <h2 className="inline-flex items-center gap-1.5 font-bold">
-            <Sparkles className="size-4 text-brand-600" aria-hidden /> مساعد هدهد الذكي
+            <Sparkles className="size-4 text-brand-600" aria-hidden /> دلّني
+            <span className="text-xs font-normal text-muted">مساعدك الذكي لطلعاتك</span>
           </h2>
-          {plan?.startedAt && pendingVisit && (
-            <button onClick={() => setFeedbackOn(true)} className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[11px] text-amber-900">
-              <FastForward className="size-3" aria-hidden /> محاكاة الرجوع بعد الزيارة
-            </button>
-          )}
+          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="إغلاق دلّني">
+            <X className="size-4" />
+          </button>
         </div>
         <div className="min-h-0 flex-1">
           <AssistantChat
@@ -521,7 +577,7 @@ export default function HudhudApp() {
                     onReplace={replaceStop}
                     onToggleLock={(i) => toggleLock(i)}
                     onRemove={removeStop}
-                    onStart={startOuting}
+                    onStart={startPlanTrip}
                   />
                 </div>
               ) : null
@@ -534,6 +590,11 @@ export default function HudhudApp() {
         <PlaceSheet
           place={details}
           onClose={() => setDetails(null)}
+          onStartTrip={() => {
+            const idx = plan?.stops.findIndex((s) => s.place.id === details.id) ?? -1;
+            if (plan && idx >= 0) startTrip(plan.stops.map((s) => s.place), idx, plan.id);
+            else startTrip([details]);
+          }}
           onAddToPlan={
             plan?.stops.some((s) => s.place.id === details.id)
               ? undefined
@@ -547,7 +608,36 @@ export default function HudhudApp() {
         />
       )}
 
-      {feedbackOn && pendingVisit && <FeedbackFlow key={pendingVisit.placeId} visit={pendingVisit} prefs={prefs} onFinish={finishVisit} onPrefs={updatePrefs} />}
+      {trip?.phase === "feedback" ? (
+        <FeedbackFlow
+          key={`trip-${trip.index}`}
+          visit={visitOf(trip.stops[trip.index], trip.planId ?? "")}
+          prefs={prefs}
+          onPrefs={updatePrefs}
+          onFinish={(status, message) => {
+            finishVisit(trip.stops[trip.index].id, status, message);
+            tripApi.afterFeedback();
+          }}
+        />
+      ) : (
+        feedbackOn &&
+        pendingVisit &&
+        !trip && (
+          <FeedbackFlow key={pendingVisit.placeId} visit={pendingVisit} prefs={prefs} onFinish={(st, m) => finishVisit(pendingVisit.placeId, st, m)} onPrefs={updatePrefs} />
+        )
+      )}
+
+      {dallniAsk && (
+        <DallniFeedback
+          planId={dallniAsk.planId}
+          onDone={(message) => {
+            setDallniAsk(null);
+            if (message) say({ role: "assistant", text: message });
+          }}
+        />
+      )}
+
+      {statsOpen && <DallniStatsSheet onClose={() => setStatsOpen(false)} />}
 
       {prefsOpen && <PrefsSheet prefs={prefs} store={store} onChange={updatePrefs} onClear={resetPrefs} onClose={() => setPrefsOpen(false)} />}
     </div>

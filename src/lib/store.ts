@@ -209,3 +209,60 @@ export async function listReviews(place: Place): Promise<Review[]> {
   }
   return ls.get<Review[]>("hudhud.reviews", []).filter((r) => r.placeId === place.id);
 }
+
+// ---------------------------------------------------------------- دلّني feedback (about the assistant, not places)
+
+export type AssistantFeedback = {
+  helpful: "yes" | "partly" | "no";
+  usedPlace: "yes" | "no" | "not_yet";
+  improvements: ("accuracy" | "proximity" | "variety" | "understanding" | "editing")[];
+};
+
+const ASK_KEY = "hudhud.dallniAsked";
+const ASK_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+/** Ask at most once per outing, and not again within 12 hours — never nag. */
+export function shouldAskDallni(planKey: string): boolean {
+  const a = ls.get<{ keys: string[]; at: number }>(ASK_KEY, { keys: [], at: 0 });
+  return !a.keys.includes(planKey) && Date.now() - a.at > ASK_COOLDOWN_MS;
+}
+export function markDallniAsked(planKey: string) {
+  const a = ls.get<{ keys: string[]; at: number }>(ASK_KEY, { keys: [], at: 0 });
+  ls.set(ASK_KEY, { keys: [...a.keys, planKey].slice(-50), at: Date.now() });
+}
+
+export async function saveAssistantFeedback(f: AssistantFeedback, planId?: string): Promise<StoreStatus["mode"]> {
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  const isUuid = planId && /^[0-9a-f-]{36}$/i.test(planId);
+  if (uid && db) {
+    const { error } = await db
+      .from("assistant_feedback")
+      .insert({ user_id: uid, plan_id: isUuid ? planId : null, helpful: f.helpful, used_place: f.usedPlace, improvements: f.improvements });
+    if (!error) return "supabase";
+    console.error("assistant feedback", error);
+  }
+  ls.set("hudhud.assistantFeedback", [...ls.get<AssistantFeedback[]>("hudhud.assistantFeedback", []), f]);
+  return "local";
+}
+
+export type DallniStats = {
+  plans_started: number;
+  responses: number;
+  helpful_yes: number;
+  helpful_partly: number;
+  helpful_no: number;
+  used_yes: number;
+  used_no: number;
+  used_not_yet: number;
+  improvements: Record<string, number>;
+  published_reviews: number;
+};
+
+/** Aggregate-only numbers from the database (no individual feedback is ever read). */
+export async function loadDallniStats(): Promise<DallniStats | null> {
+  const db = getBrowserSupabase();
+  if (!db) return null;
+  const { data, error } = await db.rpc("dallni_stats");
+  return error ? null : (data as DallniStats);
+}

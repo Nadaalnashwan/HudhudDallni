@@ -1,9 +1,9 @@
 import type { PreferenceUpdate, Preferences } from "./types";
 
 /** Reasons the feedback UI offers; Gemini may only map a free-text note onto these. */
-export const NEGATIVE_REASONS = ["المكان زحمة", "الأسعار مرتفعة", "الخدمة سيئة", "المكان ما يناسبني", "النظافة", "الانتظار طويل"];
+export const NEGATIVE_REASONS = ["الزحمة", "النظافة", "الأسعار", "الخدمة", "الموقع", "سبب آخر"];
 export const POSITIVE_REASONS = ["المكان هادي", "الخدمة ممتازة", "الأسعار مناسبة", "مناسب للمذاكرة", "الأكل/القهوة لذيذة", "قريب ومناسب"];
-export const FEEDBACK_REASONS = [...NEGATIVE_REASONS, ...POSITIVE_REASONS];
+export const FEEDBACK_REASONS = [...NEGATIVE_REASONS.filter((r) => r !== "سبب آخر"), ...POSITIVE_REASONS];
 
 export type FeedbackAnalysis = { reasons: string[]; summary?: string; learned?: PreferenceUpdate; engine: "gemini" | "none" };
 

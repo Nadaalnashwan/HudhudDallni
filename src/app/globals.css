@@ -1,11 +1,46 @@
 @import "tailwindcss";
 
+/* `dark:` utilities follow the .dark class on <html> (set before paint, see layout.tsx) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------- design tokens */
+
 :root {
+  color-scheme: light;
   --background: #f4f6f8;
   --foreground: #14202b;
   --surface: #ffffff;
   --muted: #6b7785;
   --line: #e3e8ee;
+  --brand-50: #e8f5f3;
+  --brand-100: #c9e9e4;
+  --brand-600: #0e8571;
+  --brand-700: #0b6b5b;
+}
+
+/* Premium dark: deep charcoal base, lighter surfaces, same teal brand */
+.dark {
+  color-scheme: dark;
+  --background: #0f1418;
+  --foreground: #e6edf3;
+  --surface: #1a2128;
+  --muted: #9aa7b4;
+  --line: #2c353f;
+  --brand-50: rgb(18 161 137 / 0.16);
+  --brand-100: rgb(18 161 137 / 0.32);
+  --brand-600: #2bb79e;
+  --brand-700: #63d5bf;
+
+  /* status palettes used across the UI, re-tuned for dark surfaces (unlayered → wins over theme defaults) */
+  --color-amber-50: #2e2511;
+  --color-amber-100: #3a2d12;
+  --color-amber-900: #f9d48b;
+  --color-red-100: #3d1b1e;
+  --color-red-200: #6b2a2f;
+  --color-red-800: #fecaca;
+  --color-blue-50: #13283d;
+  --color-blue-700: #93c5fd;
+  --color-gray-300: #4b5563;
 }
 
 @theme inline {
@@ -14,11 +49,11 @@
   --color-surface: var(--surface);
   --color-muted: var(--muted);
   --color-line: var(--line);
-  --color-brand-50: #e8f5f3;
-  --color-brand-100: #c9e9e4;
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
   --color-brand-500: #12a189;
-  --color-brand-600: #0e8571;
-  --color-brand-700: #0b6b5b;
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
   --color-accent: #f2994a;
   --font-sans: var(--font-arabic), system-ui, sans-serif;
 }
@@ -35,12 +70,22 @@ body {
   overscroll-behavior: none;
 }
 
+/* Smooth, brief cross-fade only while the user switches theme */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease, fill 0.2s ease !important;
+}
+
 .scrollbar-none {
   scrollbar-width: none;
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------------------------------------------------------------- map */
 
 /* Leaflet markers rendered as HTML */
 .hh-marker {
@@ -49,4 +94,26 @@ body {
 }
 .leaflet-container {
   font-family: var(--font-sans);
+  background: var(--background);
+}
+
+/*
+ * Dark map: the same licensed OpenStreetMap tiles, re-coloured in the browser (no third-party
+ * dark tile service needed). Only the tile layer is filtered — pins, route lines, the
+ * current-location dot and place photos keep their real colours.
+ */
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.55);
+}
+.dark .leaflet-control-attribution,
+.dark .leaflet-tooltip {
+  background: var(--surface);
+  color: var(--muted);
+  border-color: var(--line);
+}
+.dark .leaflet-control-attribution a {
+  color: var(--brand-700);
+}
+.dark .leaflet-tooltip-top::before {
+  border-top-color: var(--surface);
 }

@@ -116,12 +116,12 @@ export type AssistantAction =
       type: "modify";
       op: "replace" | "lock" | "unlock" | "remove";
       index: number;
-      /** replace only: new spec for that stop, e.g. a different cuisine */
+      /** replace only: new spec for that stop, e.g. a different cuisine or a different activity */
       step?: Partial<StepSpec>;
       nearer?: boolean; // "أبي كوفي أقرب"
       onlyThis?: boolean; // "غير المطعم بس" — keep the stops after it
     }
-  | { type: "add"; step: StepSpec }
+  | { type: "add"; step: StepSpec; after?: number } // insert after this stop index; default: end
   | { type: "chat" };
 
 export type ParsedRequest = {
@@ -131,7 +131,16 @@ export type ParsedRequest = {
   tags: PlaceTag[];
 };
 
-export type AssistantResponse = { reply: string; action: AssistantAction; engine: "groq" | "rules" };
+/** Stable tastes the user stated in chat ("ما أحب الزحمة"); saved only with consent. */
+export type PreferenceUpdate = Partial<Pick<Preferences, "likes" | "avoid" | "neighborhoods" | "cuisines" | "cafeTypes" | "budget" | "distance">>;
+
+export type AssistantResponse = {
+  reply: string;
+  action: AssistantAction;
+  engine: "gemini" | "rules";
+  learned?: PreferenceUpdate;
+  fallback?: "quota" | "unavailable" | "invalid"; // why Gemini was not used for this turn
+};
 
 export type ChatMessage = {
   id: string;

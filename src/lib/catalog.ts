@@ -27,7 +27,7 @@ export const SUBCATEGORY_META: Record<Subcategory, { category: Category; label: 
   grill: { category: "restaurant", label: "مشاوي", words: ["مشاوي", "مشويات", "شوايه", "grill"] },
   specialty_coffee: { category: "cafe", label: "قهوة مختصة", words: ["مختصه", "مختص", "specialty"] },
   quiet: { category: "cafe", label: "هادي", words: ["هادي", "هادئ", "هدوء", "رايق"] },
-  study: { category: "cafe", label: "للمذاكرة", words: ["مذاكره", "اذاكر", "ادرس", "دراسه", "لابتوب", "اشتغل"] },
+  study: { category: "cafe", label: "للمذاكرة", words: ["مذاكره", "للمذاكره", "اذاكر", "ادرس", "دراسه", "لابتوب", "اشتغل"] },
   drive_thru: { category: "cafe", label: "درايف ثرو", words: ["درايف", "drive", "من السياره", "سياره"] },
   fitness: { category: "gym", label: "لياقة", words: ["لياقه", "فتنس", "fitness"] },
   women: { category: "gym", label: "نسائي", words: ["نسائي", "للبنات", "بنات", "نساء", "women"] },

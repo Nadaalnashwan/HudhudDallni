@@ -33,7 +33,7 @@ export function PlacePhoto({ place, className = "", caption = true }: { place: P
 }
 
 export const typeLabel = (p: Pick<Place, "category" | "subcategory">) =>
-  p.subcategory && SUBCATEGORY_META[p.subcategory].label !== CATEGORY_META[p.category].label
+  p.subcategory && !SUBCATEGORY_META[p.subcategory].label.includes(CATEGORY_META[p.category].label)
     ? `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`
     : CATEGORY_META[p.category].label;
 

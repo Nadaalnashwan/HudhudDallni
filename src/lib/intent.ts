@@ -2,12 +2,12 @@ import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf } from "./c
 import type { AssistantResponse, Category, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
 /**
- * Rule-based understanding of Saudi-dialect requests. Used when Groq is not
+ * Rule-based understanding of Saudi-dialect requests. Used when Gemini is not
  * configured, and as a safety net when the LLM returns something invalid.
  */
 
 export type IntentContext = {
-  planSteps: { category: Category; locked: boolean }[];
+  planSteps: { category: Category; subcategory?: Subcategory; locked: boolean; name?: string }[];
   pending?: Partial<ParsedRequest>;
 };
 
@@ -23,10 +23,10 @@ const PREFIX = "(?:^|[\\s،,.؟?!:\\-←>])(?:و|ب|ل|ف)?(?:ال)?";
 
 const CATEGORY_WORDS: Record<Category, string[]> = {
   gym: ["نادي", "جيم", "gym", "اتمرن", "تمرين"],
-  cafe: ["كوفي", "قهوه", "كافيه", "كافي", "مقهي", "coffee", "cafe"],
+  cafe: ["كوفي", "قهوه", "كافيه", "كافي", "مقهي", "اتقهوي", "coffee", "cafe"],
   restaurant: ["مطعم", "اتغدي", "غدا", "اتعشي", "عشا", "اكل", "جوعان", "restaurant"],
   dessert: ["حلا", "حلي", "حلويات", "كيك", "ايس كريم", "ايسكريم"],
-  park: ["حديقه", "منتزه", "ممشي", "امشي"],
+  park: ["حديقه", "منتزه", "ممشي", "امشي", "اتمشي", "تمشيه"],
   mall: ["مول", "تسوق", "مجمع تجاري"],
   entertainment: ["ترفيه", "العاب", "قيمز", "ملاهي"],
 };
@@ -34,7 +34,7 @@ const CATEGORY_WORDS: Record<Category, string[]> = {
 // A cuisine/type word alone ("أبي برجر") implies its category only where that is unambiguous.
 const IMPLYING: Category[] = ["restaurant", "dessert", "entertainment"];
 const STEP_SEPARATOR = /(بعده|بعدها|بعدين|ثم|وبعد)/;
-const REFERENCE = /(?:^|\s)(من|عند|جنب|حول|قرب)\s*$/;
+const REFERENCE = /(?:^|\s)(من|عند|جنب|حول|قرب|بعد|قبل)\s*$/;
 
 const TAG_WORDS: Record<PlaceTag, string[]> = {
   quiet: ["هادي", "هادئ", "هدوء", "رايق"],
@@ -164,6 +164,14 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
       return { engine, reply: "شلته من الخطة وأعدت ترتيب الباقي.", action: { type: "modify", op: "remove", index: idx! } };
     if (valid) {
       const target = ctx.planSteps[idx!].category;
+      // "بدل الحديقة بمول": swap the activity itself
+      const swapTo = findCategories(text).find((c) => c.category !== target)?.category;
+      if (swapTo && /(بدل|غير|حول)/.test(text) && !/(ضيف|اضف|زيد|زود)/.test(text))
+        return {
+          engine,
+          reply: `أبشر، بحط ${CATEGORY_META[swapTo].label} بدال ${CATEGORY_META[target].label}.`,
+          action: { type: "modify", op: "replace", index: idx!, step: { category: swapTo, subcategory: findSubcategory(text, swapTo) } },
+        };
       const sub = findSubcategory(text, target);
       const onlyThis = /(بس|فقط|لحاله)$|\s(بس|فقط|لحاله)\s/.test(text);
       // "خل المطعم إيطالي": change the stop's type → a real DB filter on the new subcategory
@@ -184,7 +192,16 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
     }
     if (/(ضيف|اضف|زيد|زود|وبعدها|وبعده)/.test(text)) {
       const steps = stepsFrom(text);
-      if (steps.length === 1) return { engine, reply: `ضفت ${label(steps[0])} آخر الخطة.`, action: { type: "add", step: { ...steps[0], tags: findTags(text) } } };
+      // "زيد حلويات بعد النادي": insert after the named stop instead of at the end
+      const ref = /بعد\s+(?:ال)?(\S+)/.exec(text)?.[1];
+      const afterCat = ref ? findCategories(` ${ref}`)[0]?.category : undefined;
+      const after = afterCat ? ctx.planSteps.findIndex((s) => s.category === afterCat) : -1;
+      if (steps.length === 1)
+        return {
+          engine,
+          reply: after >= 0 ? `ضفت ${label(steps[0])} بعد ${CATEGORY_META[ctx.planSteps[after].category].label}.` : `ضفت ${label(steps[0])} آخر الخطة.`,
+          action: { type: "add", step: { ...steps[0], tags: findTags(text) }, after: after >= 0 ? after : undefined },
+        };
     }
   }
 

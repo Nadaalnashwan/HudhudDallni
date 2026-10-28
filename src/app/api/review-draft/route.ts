@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { CATEGORY_META } from "@/lib/catalog";
-import { groqEnabled, groqText } from "@/lib/server/groq";
+import { geminiEnabled, geminiText } from "@/lib/server/gemini";
 import type { Category } from "@/lib/types";
 
 type Body = {
@@ -33,13 +33,13 @@ function templateDraft(b: Body) {
 
 export async function POST(req: Request) {
   const body: Body = await req.json();
-  if (!groqEnabled()) return NextResponse.json({ text: templateDraft(body), engine: "template" });
+  if (!geminiEnabled()) return NextResponse.json({ text: templateDraft(body), engine: "template" });
   try {
-    const text = await groqText(
-      "اكتب تقييم قصير (جملتين إلى أربع) بلهجة سعودية بصيغة المتكلم لمكان زاره المستخدم، مبني فقط على المعلومات المعطاة بدون مبالغة أو اختراع تفاصيل. أعد نص التقييم فقط بدون مقدمات.",
-      JSON.stringify(body),
+    const text = await geminiText(
+      "اكتب تقييم قصير (جملتين إلى أربع) بلهجة سعودية بصيغة المتكلم لمكان زاره المستخدم، مبني فقط على المعلومات المعطاة (التجربة، النجوم، الأسباب، الملاحظة). لا تخترع أطباق أو أسعار أو تفاصيل ما ذكرها المستخدم، ولا تبالغ. أعد نص التقييم فقط بدون مقدمات أو علامات تنصيص.",
+      JSON.stringify({ ...body, placeName: displayName(body.placeName), kind: CATEGORY_META[body.category].label }),
     );
-    return NextResponse.json({ text: text.replace(/^["«]|["»]$/g, ""), engine: "groq" });
+    return NextResponse.json({ text: text.replace(/^["«]|["»]$/g, ""), engine: "gemini" });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ text: templateDraft(body), engine: "template" });

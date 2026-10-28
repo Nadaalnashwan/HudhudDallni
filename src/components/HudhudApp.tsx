@@ -2,6 +2,7 @@
 import { Bird, Brain, Check, Database, FastForward, FlaskConical, LocateFixed, Settings, Sparkles, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
+import { mergePreferences } from "@/lib/feedback";
 import { formatKm, RIYADH_CENTER } from "@/lib/geo";
 import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, savePlan, savePreferences, saveVisits, storeStatus, type StoreStatus } from "@/lib/store";
 import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
@@ -23,7 +24,7 @@ const WELCOME: ChatMessage = {
 };
 const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
 
-type Config = { places: Place["source"]; placesCount?: number; dbError?: string; ai: "groq" | "rules" };
+type Config = { places: Place["source"]; placesCount?: number; dbError?: string; ai: "gemini" | "rules"; aiModel?: string };
 type RebuildOpts = { place?: Place; exclude?: boolean; step?: Partial<StepSpec>; nearer?: boolean; onlyThis?: boolean };
 
 type Origin = { loc: LatLng; label: string };
@@ -57,6 +58,7 @@ export default function HudhudApp() {
   const [feedbackOn, setFeedbackOn] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
 
   const say = (m: Omit<ChatMessage, "id">) => setMessages((x) => [...x, { id: uid(), ...m }]);
 
@@ -152,7 +154,8 @@ export default function HudhudApp() {
           parts.push(s.locked ? `${label} مثبّت فما غيرته` : `${label} للحين الأنسب (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}) فخليته`);
         return;
       }
-      parts.push(i === changedAt ? `غيّرت ${label} إلى ${s.place.name}` : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
+      const swapped = before.stops[i] && before.stops[i].step.category !== s.step.category;
+      parts.push(i === changedAt ? (swapped ? `حطيت ${typeLabel(s.step)} بدال ${"ال" + CATEGORY_META[before.stops[i].step.category].label}: ${s.place.name}` : `غيّرت ${label} إلى ${s.place.name}`) : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
     });
     say({ role: "assistant", text: parts.length ? parts.join("\n") : "حدّثت الخطة.", places: after.stops.length === 1 ? [after.stops[0].place, ...after.stops[0].alternatives] : undefined });
   };
@@ -217,23 +220,40 @@ export default function HudhudApp() {
     if (next) say({ role: "assistant", text: `شلت ${typeLabel(plan.stops[i].step)} من الخطة${i < rest.length ? " وحدّثت اللي بعده" : ""}.` });
   };
 
-  const addStep = async (step: StepSpec, place?: Place) => {
+  /** Inserts a stop after `after` (default: at the end). Stops after it re-anchor unless locked. */
+  const addStep = async (step: StepSpec, place?: Place, after?: number) => {
     setBusy(true);
-    const base = plan;
-    const steps = [...(base?.stops.map((s) => s.step) ?? []), step];
+    const base = plan?.stops ?? [];
+    const at = after === undefined ? base.length : after + 1;
+    const insert = <T,>(list: T[], v: T) => [...list.slice(0, at), v, ...list.slice(at)];
     const next = await runPlan(
       {
-        ...(base ? argsFrom(base, steps) : { steps, origin: userOrigin, priority: defaultPriority(), tags }),
-        keep: [...(base?.stops.map((s) => s.place) ?? []), place ?? null],
-        locked: [...(base?.stops.map((s) => s.locked) ?? []), false],
-        excluded: [...(base?.stops.map((s) => s.excluded) ?? []), []],
+        ...(plan ? argsFrom(plan, insert(base.map((s) => s.step), step)) : { steps: [step], origin: userOrigin, priority: defaultPriority(), tags }),
+        keep: insert(base.map((s, j) => (j < at || s.locked ? s.place : null)), place ?? null),
+        locked: insert(base.map((s) => s.locked), false),
+        excluded: insert(base.map((s) => s.excluded), []),
       },
-      base?.id,
+      plan?.id,
     );
     setBusy(false);
     if (next) {
-      const s = next.stops[next.stops.length - 1];
+      const s = next.stops[Math.min(at, next.stops.length - 1)];
       say({ role: "assistant", text: `ضفت ${typeLabel(s.step)}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} بخط مستقيم عن ${s.anchorLabel}).` });
+    }
+  };
+
+  /** Stable tastes Gemini heard in chat are saved only if the user allowed learning. */
+  const applyLearned = (u: AssistantResponse["learned"]) => {
+    if (!u) return;
+    const items = [...(u.likes ?? []).map((t) => TAG_LABELS[t]), ...[...(u.cuisines ?? []), ...(u.cafeTypes ?? [])].map((x) => SUBCATEGORY_META[x].label), ...(u.neighborhoods ?? []), ...(u.avoid ?? []).map((a) => `تتجنب ${a}`)];
+    if (u.budget === "low") items.push("ميزانية اقتصادية");
+    if (u.distance) items.push(u.distance === "distance" ? "تفضّل الأقرب" : "تفضّل الأعلى تقييماً");
+    if (!items.length) return;
+    if (prefs.consent) {
+      updatePrefs(mergePreferences(prefs, u));
+      say({ role: "assistant", text: `سجّلت تفضيلك: ${items.join("، ")}. تقدر تشوفه أو تمسحه من الإعدادات.` });
+    } else {
+      say({ role: "assistant", text: `لاحظت إنك ذكرت: ${items.join("، ")}. إذا تبيني أتذكره للمرات الجاية فعّل حفظ التفضيلات من الإعدادات.` });
     }
   };
 
@@ -270,12 +290,17 @@ export default function HudhudApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          context: { planSteps: plan?.stops.map((s) => ({ category: s.step.category, locked: s.locked })) ?? [], pending },
+          context: { planSteps: plan?.stops.map((s) => ({ category: s.step.category, subcategory: s.step.subcategory, locked: s.locked })) ?? [], pending },
           preferences: prefs,
         }),
       });
       const out = (await res.json()) as AssistantResponse;
       const a = out.action;
+      if (out.fallback === "quota" && !quotaNoticeShown) {
+        setQuotaNoticeShown(true);
+        say({ role: "assistant", text: "خدمة Gemini وصلت حدّها حالياً، فبكمل بالفهم المحلي لين ترجع." });
+      }
+      applyLearned(out.learned);
       if (a.type === "clarify") {
         setPending(a.pending);
         say({ role: "assistant", text: a.question || out.reply, options: a.options });
@@ -298,7 +323,7 @@ export default function HudhudApp() {
         else if (a.op === "unlock") toggleLock(a.index, false);
         else await removeStop(a.index);
       } else if (a.type === "add") {
-        await addStep(a.step);
+        await addStep(a.step, undefined, a.after);
       } else {
         say({ role: "assistant", text: out.reply });
       }
@@ -549,9 +574,14 @@ function SourceBanner({ config, store }: { config: Config; store: StoreStatus | 
           <FlaskConical className="size-3" aria-hidden /> بيانات محلية تجريبية (قاعدة البيانات غير مهيأة)
         </span>
       )}
+      {config.ai === "gemini" && (
+        <span className={`${pill} bg-surface text-muted`}>
+          <Sparkles className="size-3" aria-hidden /> فهم الطلبات: Gemini
+        </span>
+      )}
       {config.ai === "rules" && (
         <span className={`${pill} bg-surface text-muted`}>
-          <Brain className="size-3" aria-hidden /> فهم الطلبات بقواعد محلية (بدون Groq)
+          <Brain className="size-3" aria-hidden /> فهم الطلبات بقواعد محلية (Gemini غير مفعّل)
         </span>
       )}
       {store?.mode === "local" && (

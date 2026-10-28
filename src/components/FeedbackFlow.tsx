@@ -1,6 +1,7 @@
 "use client";
 import { Frown, Meh, Smile, Sparkles, Star } from "lucide-react";
 import { useState } from "react";
+import { mergePreferences, NEGATIVE_REASONS, POSITIVE_REASONS, type FeedbackAnalysis } from "@/lib/feedback";
 import { confirmVisit, publishReview, saveFeedback } from "@/lib/store";
 import type { Preferences, Review, Visit } from "@/lib/types";
 import { CategoryIcon } from "./icons";
@@ -8,8 +9,6 @@ import { Spinner } from "./ui";
 
 type Experience = Review["experience"];
 
-const NEGATIVE = ["المكان زحمة", "الأسعار مرتفعة", "الخدمة سيئة", "المكان ما يناسبني", "النظافة", "الانتظار طويل"];
-const POSITIVE = ["المكان هادي", "الخدمة ممتازة", "الأسعار مناسبة", "مناسب للمذاكرة", "الأكل/القهوة لذيذة", "قريب ومناسب"];
 
 /** Turns what the user said into preferences — stated facts only, nothing assumed about specific places. */
 const LEARN: Record<string, { like?: Preferences["likes"][number]; avoid?: string; minRating?: number; budget?: "low"; distance?: "distance" }> = {
@@ -66,6 +65,9 @@ export default function FeedbackFlow({
   const [loading, setLoading] = useState(false);
   const [published, setPublished] = useState<Review["storage"] | null>(null);
   const [visitId, setVisitId] = useState<string>();
+  const [analysis, setAnalysis] = useState<FeedbackAnalysis | null>(null);
+  // chips the user picked + reasons Gemini found in their free-text note
+  const allReasons = () => [...new Set([...reasons, ...(analysis?.reasons ?? [])])];
   const name = visit.placeName;
 
   const confirm = async () => {
@@ -81,13 +83,18 @@ export default function FeedbackFlow({
   const makeDraft = async () => {
     setStep("draft");
     setLoading(true);
+    const post = (url: string, body: unknown) =>
+      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     try {
-      const r = await fetch("/api/review-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placeName: name, category: visit.category, rating: stars, experience: exp, reasons, note }),
-      });
-      setDraft((await r.json()).text);
+      // draft the review and analyse the free-text note in parallel
+      const [d, a] = await Promise.all([
+        post("/api/review-draft", { placeName: name, category: visit.category, rating: stars, experience: exp, reasons, note }),
+        note.trim()
+          ? post("/api/feedback-analyze", { note, reasons, experience: exp, category: visit.category, subcategory: visit.subcategory }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      setDraft(d.text);
+      setAnalysis(a);
     } finally {
       setLoading(false);
     }
@@ -105,7 +112,7 @@ export default function FeedbackFlow({
         where = await publishReview(
           { placeId: visit.placeId, placeName: name, rating: stars, experience: exp!, reasons, body: draft.trim() },
           visit,
-          { visitId, negativeReason: exp !== "excellent" ? [...reasons, note.trim()].filter(Boolean).join("، ") || undefined : undefined },
+          { visitId, negativeReason: exp !== "excellent" ? [...allReasons(), analysis?.summary ?? note.trim()].filter(Boolean).join("، ") || undefined : undefined },
         );
         setPublished(where);
       } catch (e) {
@@ -121,10 +128,10 @@ export default function FeedbackFlow({
 
   const consent = async (yes: boolean) => {
     if (yes) {
-      onPrefs(learnFromFeedback({ ...prefs, consent: true }, visit, exp!, reasons, note));
+      onPrefs(mergePreferences(learnFromFeedback({ ...prefs, consent: true }, visit, exp!, allReasons(), note), analysis?.learned));
       await saveFeedback(visit, {
         sentiment: exp === "excellent" ? "positive" : exp === "average" ? "neutral" : "negative",
-        reason: reasons.join("، ") || undefined,
+        reason: allReasons().join("، ") || undefined,
         notes: note.trim() || undefined,
       });
     }
@@ -197,7 +204,7 @@ export default function FeedbackFlow({
         {step === "reasons" && (
           <>
             <p className="text-lg">{exp === "excellent" ? "وش أكثر شي عجبك؟" : "وش السبب؟ وش ما عجبك؟"}</p>
-            <div className="flex flex-wrap gap-2">{(exp === "excellent" ? POSITIVE : NEGATIVE).map(chip)}</div>
+            <div className="flex flex-wrap gap-2">{(exp === "excellent" ? POSITIVE_REASONS : NEGATIVE_REASONS).map(chip)}</div>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="أو اكتب السبب بنفسك..." className="h-20 w-full rounded-xl border border-line p-2 text-sm outline-none focus:border-brand-500" />
             <button onClick={makeDraft} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-2 text-white">
               <Sparkles className="size-4" aria-hidden /> صِغ لي تقييم
@@ -212,6 +219,9 @@ export default function FeedbackFlow({
               <div className="flex items-center gap-2 text-sm text-muted"><Spinner /> جاري الصياغة...</div>
             ) : (
               <textarea value={draft} onChange={(e) => setDraft(e.target.value)} className="h-32 w-full rounded-xl border border-line p-3 text-sm leading-6 outline-none focus:border-brand-500" />
+            )}
+            {analysis && analysis.reasons.some((r) => !reasons.includes(r)) && (
+              <p className="text-xs text-brand-700">فهمت من ملاحظتك: {analysis.reasons.filter((r) => !reasons.includes(r)).join("، ")}</p>
             )}
             <p className="text-xs text-muted">
               {visit.source === "supabase" ? "ينشر داخل نسختنا من هدهد فقط بموافقتك، ومنفصل عن التقييم الأساسي للمكان." : "وضع تجريبي: يحفظ على جهازك فقط."} وما ينشر على Google Maps.

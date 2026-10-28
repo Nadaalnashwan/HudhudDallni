@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { groqEnabled } from "@/lib/server/groq";
+import { geminiEnabled, geminiStatus } from "@/lib/server/gemini";
 import { placesMode } from "@/lib/server/places";
 import { countPlaces } from "@/lib/server/supabasePlaces";
 
@@ -15,5 +15,7 @@ export async function GET() {
       dbError = (e as Error).message;
     }
   }
-  return NextResponse.json({ places, placesCount, dbError, ai: groqEnabled() ? "groq" : "rules" });
+  const { model, usableKeys } = geminiStatus();
+  // key values are never returned — only how many are usable
+  return NextResponse.json({ places, placesCount, dbError, ai: geminiEnabled() ? "gemini" : "rules", aiModel: geminiEnabled() ? model : undefined, aiKeys: usableKeys });
 }

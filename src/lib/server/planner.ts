@@ -1,5 +1,5 @@
 import "server-only";
-import { CATEGORY_META, TAG_LABELS } from "../catalog";
+import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { formatKm, haversineKm } from "../geo";
 import type { LatLng, Place, PlaceTag, PlanStop, Preferences, Priority, StepSpec } from "../types";
 import { searchPlaces } from "./places";
@@ -8,6 +8,7 @@ export type BuildInput = {
   steps: StepSpec[];
   origin: LatLng;
   originLabel: string;
+  district?: string; // restricts the FIRST stop to this neighborhood
   priority: Priority;
   tags: PlaceTag[];
   preferences?: Preferences;
@@ -15,6 +16,7 @@ export type BuildInput = {
   keep?: (Place | null)[];
   locked?: boolean[];
   excluded?: string[][];
+  nearest?: boolean[]; // "أبي كوفي أقرب": pick the closest candidate for that step
 };
 
 const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
@@ -25,12 +27,14 @@ const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
 
 export const anchorName = (place: Place) => "ال" + CATEGORY_META[place.category].label;
 
+const learned = (input: BuildInput) => (input.preferences?.consent ? input.preferences : undefined);
+
 function wantedTags(step: StepSpec, input: BuildInput): PlaceTag[] {
-  const prefs = input.preferences?.consent ? input.preferences.likes : [];
-  return [...new Set([...(step.tags ?? []), ...input.tags, ...prefs])];
+  return [...new Set([...(step.tags ?? []), ...input.tags, ...(learned(input)?.likes ?? [])])];
 }
 
-function score(p: Place, anchor: LatLng, wanted: PlaceTag[], input: BuildInput) {
+/** Deterministic score: proximity (Haversine) + rating + stated/learned preferences. */
+function score(p: Place, anchor: LatLng, step: StepSpec, wanted: PlaceTag[], input: BuildInput) {
   const w = WEIGHTS[input.priority];
   const dist = haversineKm(anchor, p.location);
   const prox = Math.max(0, 1 - dist / 6);
@@ -38,26 +42,41 @@ function score(p: Place, anchor: LatLng, wanted: PlaceTag[], input: BuildInput) 
   const pop = Math.min(1, Math.log10((p.ratingCount ?? 0) + 1) / 3.5) * 0.1;
   const tagMatch = wanted.length ? wanted.filter((t) => p.tags.includes(t)).length / wanted.length : 0;
   let s = w.prox * prox + w.rating * rating + 0.25 * tagMatch + pop;
-  const minRating = input.preferences?.consent ? input.preferences.minRating : undefined;
-  if (minRating && (p.rating ?? 0) < minRating) s -= 0.2;
+  const prefs = learned(input);
+  if (prefs) {
+    // Learned tastes only nudge ranking when the user did not ask for a specific type.
+    if (!step.subcategory && p.subcategory && [...prefs.cuisines, ...prefs.cafeTypes].includes(p.subcategory)) s += 0.15;
+    if (p.district && prefs.neighborhoods.includes(p.district)) s += 0.05;
+    if (prefs.budget === "low" && (p.priceLevel ?? 2) <= 1) s += 0.1;
+    if (prefs.minRating && (p.rating ?? 0) < prefs.minRating) s -= 0.2;
+  }
   if (p.openNow === false) s -= 0.15;
   return s;
 }
 
 /** Human-readable "why this place" — only claims what the data supports. */
-function reasonFor(p: Place, anchorLabel: string, distKm: number, wanted: PlaceTag[], input: BuildInput, userPicked: boolean) {
+function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number, wanted: PlaceTag[], input: BuildInput) {
   const parts: string[] = [];
-  if (userPicked) parts.push("اخترته أنت");
-  parts.push(`يبعد ${formatKm(distKm)} عن ${anchorLabel}`);
-  if (p.rating) parts.push(`تقييمه ${p.rating}${p.ratingCount ? ` من ${p.ratingCount.toLocaleString("ar-SA")} تقييم` : ""}`);
-  const matched = wanted.filter((t) => p.tags.includes(t));
-  const learned = input.preferences?.consent ? input.preferences.likes : [];
-  for (const t of matched) parts.push(learned.includes(t) && !input.tags.includes(t) ? `${TAG_LABELS[t]} (يناسب تفضيلاتك السابقة)` : TAG_LABELS[t]);
-  const missing = wanted.filter((t) => !p.tags.includes(t));
+  if (step.placeName) parts.push("اخترته أنت");
+  if (step.subcategory) parts.push(SUBCATEGORY_META[step.subcategory].label);
+  parts.push(`يبعد ${formatKm(distKm)} بخط مستقيم عن ${anchorLabel}`);
+  if (p.rating) parts.push(`تقييمه ${p.rating}${p.ratingCount ? ` (${p.ratingCount.toLocaleString("ar-SA")})` : ""}`);
+  const prefs = learned(input);
+  for (const t of wanted.filter((t) => p.tags.includes(t)))
+    parts.push(prefs?.likes.includes(t) && !input.tags.includes(t) && !step.tags?.includes(t) ? `${TAG_LABELS[t]} (يناسب تفضيلاتك)` : TAG_LABELS[t]);
+  if (prefs && !step.subcategory && p.subcategory && [...prefs.cuisines, ...prefs.cafeTypes].includes(p.subcategory))
+    parts.push(`${SUBCATEGORY_META[p.subcategory].label} (من تفضيلاتك)`);
+  // Only flag gaps for what the user asked for now — a learned taste is a nudge, not a requirement.
+  const missing = [...new Set([...(step.tags ?? []), ...input.tags])].filter((t) => !p.tags.includes(t));
   if (missing.length) parts.push(`ما عندنا معلومة مؤكدة إنه ${missing.map((t) => TAG_LABELS[t]).join(" أو ")}`);
   return parts.join(" • ");
 }
 
+/**
+ * Builds stops in the user's order. Every stop after the first is searched around
+ * the PREVIOUS selected stop, so changing one stop re-anchors everything after it.
+ * Errors from the place source propagate (no silent fallback to other data).
+ */
 export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
   const stops: PlanStop[] = [];
   const used = new Set<string>();
@@ -69,19 +88,20 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     const excluded = input.excluded?.[i] ?? [];
     const wanted = wantedTags(step, input);
     const kept = input.keep?.[i];
+    const neighborhood = !prev && input.district && DISTRICTS[input.district] ? input.district : undefined;
 
-    let candidates: Place[] = [];
-    try {
-      candidates = await searchPlaces({ category: step.category, query: step.placeName ?? step.query, near: anchor, radiusKm: i === 0 ? 5 : 2.5 });
-      if (candidates.length < 3 && !step.placeName)
-        candidates = await searchPlaces({ category: step.category, query: step.query, near: anchor, radiusKm: 8 });
-    } catch (e) {
-      console.error(e);
-    }
+    const candidates = await searchPlaces({
+      category: step.category,
+      subcategory: step.subcategory,
+      neighborhood,
+      query: step.placeName,
+      near: anchor,
+    });
+
     let eligible = candidates.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id);
-    // "قريب من اللي قبله": chained stops stay within a short hop when the data allows it.
-    if (prev && !step.placeName) {
-      for (const km of [3, 6]) {
+    // "قريب من اللي قبله": keep each hop short when the data allows it.
+    if (!step.placeName) {
+      for (const km of prev ? [3, 6, 12] : [6, 12]) {
         const near = eligible.filter((p) => haversineKm(anchor, p.location) <= km);
         if (near.length >= 2) {
           eligible = near;
@@ -89,10 +109,12 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
         }
       }
     }
-    const pool = eligible
-      .map((p) => ({ p, s: score(p, anchor, wanted, input) }))
-      .sort((a, b) => b.s - a.s)
-      .map((x) => x.p);
+    const pool = input.nearest?.[i]
+      ? eligible.sort((a, b) => haversineKm(anchor, a.location) - haversineKm(anchor, b.location))
+      : eligible
+          .map((p) => ({ p, s: score(p, anchor, step, wanted, input) }))
+          .sort((a, b) => b.s - a.s)
+          .map((x) => x.p);
 
     const place = kept ?? pool.shift();
     if (!place) continue;
@@ -104,7 +126,7 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
       alternatives: pool.slice(0, 4),
       excluded,
       locked: input.locked?.[i] ?? false,
-      reason: reasonFor(place, anchorLabel, distKm, wanted, input, Boolean(step.placeName)),
+      reason: reasonFor(place, step, anchorLabel, distKm, wanted, input),
       distanceFromPrevKm: distKm,
       anchorLabel,
     });

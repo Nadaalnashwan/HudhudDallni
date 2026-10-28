@@ -1,5 +1,5 @@
-import { CATEGORY_META, DISTRICTS } from "./catalog";
-import type { AssistantResponse, Category, ParsedRequest, PlaceTag, Priority, StepSpec } from "./types";
+import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf } from "./catalog";
+import type { AssistantResponse, Category, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
 /**
  * Rule-based understanding of Saudi-dialect requests. Used when Groq is not
@@ -28,7 +28,13 @@ const CATEGORY_WORDS: Record<Category, string[]> = {
   dessert: ["حلا", "حلي", "حلويات", "كيك", "ايس كريم", "ايسكريم"],
   park: ["حديقه", "منتزه", "ممشي", "امشي"],
   mall: ["مول", "تسوق", "مجمع تجاري"],
+  entertainment: ["ترفيه", "العاب", "قيمز", "ملاهي"],
 };
+
+// A cuisine/type word alone ("أبي برجر") implies its category only where that is unambiguous.
+const IMPLYING: Category[] = ["restaurant", "dessert", "entertainment"];
+const STEP_SEPARATOR = /(بعده|بعدها|بعدين|ثم|وبعد)/;
+const REFERENCE = /(?:^|\s)(من|عند|جنب|حول|قرب)\s*$/;
 
 const TAG_WORDS: Record<PlaceTag, string[]> = {
   quiet: ["هادي", "هادئ", "هدوء", "رايق"],
@@ -47,17 +53,46 @@ const ORDINALS: [RegExp, (n: number) => number][] = [
   [/(الاخير|اخر مكان|اخر محطه)/, (n) => n - 1],
 ];
 
-export function findCategories(text: string): { category: Category; at: number; word: string }[] {
-  const hits: { category: Category; at: number; word: string }[] = [];
-  (Object.keys(CATEGORY_WORDS) as Category[]).forEach((category) => {
-    for (const w of CATEGORY_WORDS[category]) {
-      const m = new RegExp(PREFIX + normalize(w)).exec(text);
-      if (m) hits.push({ category, at: m.index, word: w });
+const firstMatch = (text: string, w: string) => new RegExp(PREFIX + normalize(w)).exec(text)?.index ?? -1;
+
+export function findCategories(text: string): { category: Category; at: number }[] {
+  const hits: { category: Category; at: number }[] = [];
+  const add = (category: Category, words: string[]) => {
+    for (const w of words) {
+      // every occurrence, so "كوفي ... وبعده كوفي ثاني" yields two stops
+      const re = new RegExp(PREFIX + normalize(w), "g");
+      for (const m of text.matchAll(re)) {
+        // "قريب من الكوفي" refers back to an earlier stop — it is not a new stop
+        if (REFERENCE.test(text.slice(0, m.index! + 1))) continue;
+        hits.push({ category, at: m.index! });
+      }
     }
+  };
+  (Object.keys(CATEGORY_WORDS) as Category[]).forEach((c) => add(c, CATEGORY_WORDS[c]));
+  (Object.keys(SUBCATEGORY_META) as Subcategory[]).forEach((s) => {
+    const { category, words } = SUBCATEGORY_META[s];
+    if (IMPLYING.includes(category)) add(category, words);
   });
   hits.sort((a, b) => a.at - b.at);
-  const seen = new Set<Category>();
-  return hits.filter((h) => (seen.has(h.category) ? false : (seen.add(h.category), true)));
+  // Merge repeated mentions of one category ("مطعم برجر") unless a separator ("وبعده") splits them.
+  const out: { category: Category; at: number }[] = [];
+  for (const h of hits) {
+    const last = out[out.length - 1];
+    if (last && last.category === h.category && !STEP_SEPARATOR.test(text.slice(last.at, h.at))) continue;
+    out.push(h);
+  }
+  return out;
+}
+
+/** The subcategory mentioned within one step's segment of the sentence, limited to that category. */
+export function findSubcategory(segment: string, category: Category): Subcategory | undefined {
+  let best: { s: Subcategory; at: number } | undefined;
+  for (const s of subcategoriesOf(category))
+    for (const w of SUBCATEGORY_META[s].words) {
+      const at = firstMatch(segment, w);
+      if (at >= 0 && (!best || at < best.at)) best = { s, at };
+    }
+  return best?.s;
 }
 
 export function findTags(text: string): PlaceTag[] {
@@ -79,15 +114,21 @@ export function findPriority(text: string): Priority | undefined {
 }
 
 function stepsFrom(text: string): StepSpec[] {
-  return findCategories(text).map(({ category }) => {
+  const hits = findCategories(text);
+  return hits.map(({ category, at }, i) => {
+    const segment = text.slice(at, hits[i + 1]?.at ?? text.length);
     const step: StepSpec = { category };
+    const sub = findSubcategory(segment, category);
+    if (sub) step.subcategory = sub;
     if (category === "restaurant") {
-      if (/(غدا|اتغدي)/.test(text)) step.mealTime = "lunch";
-      if (/(عشا|اتعشي)/.test(text)) step.mealTime = "dinner";
+      if (/(غدا|اتغدي)/.test(segment)) step.mealTime = "lunch";
+      if (/(عشا|اتعشي)/.test(segment)) step.mealTime = "dinner";
     }
     return step;
   });
 }
+
+const label = (s: StepSpec) => (s.subcategory ? `${CATEGORY_META[s.category].label} ${SUBCATEGORY_META[s.subcategory].label}` : CATEGORY_META[s.category].label);
 
 function targetIndex(text: string, ctx: IntentContext): number | undefined {
   // A named category ("غير الكوفي") wins over ordinals, since "ثاني" also means "another one".
@@ -119,13 +160,31 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
       return { engine, reply: "تمام، فكيت التثبيت.", action: { type: "modify", op: "unlock", index: idx! } };
     if (/ثبت/.test(text) && valid)
       return { engine, reply: "ثبّته لك، ما راح يتغير.", action: { type: "modify", op: "lock", index: idx! } };
-    if (/(شيل|احذف|الغ|ما ابي)/.test(text) && valid)
+    if (/(شيل|احذف|ما ابي)/.test(text) && valid)
       return { engine, reply: "شلته من الخطة وأعدت ترتيب الباقي.", action: { type: "modify", op: "remove", index: idx! } };
-    if (/(غير|بدل|ما عجبني|ماعجبني|غيره|ثاني غيره)/.test(text) && valid)
-      return { engine, reply: "أبشر، بغيّره وأحدّث اللي بعده عشان يكون قريب منه.", action: { type: "modify", op: "replace", index: idx! } };
+    if (valid) {
+      const target = ctx.planSteps[idx!].category;
+      const sub = findSubcategory(text, target);
+      const onlyThis = /(بس|فقط|لحاله)$|\s(بس|فقط|لحاله)\s/.test(text);
+      // "خل المطعم إيطالي": change the stop's type → a real DB filter on the new subcategory
+      if (sub && /(خل|خلي|خليه|بدل|غير|حول|يصير|يكون)/.test(text))
+        return {
+          engine,
+          reply: `أبشر، بخليه ${SUBCATEGORY_META[sub].label}${onlyThis ? "" : " وأحدّث اللي بعده"}.`,
+          action: { type: "modify", op: "replace", index: idx!, step: { subcategory: sub }, onlyThis },
+        };
+      if (/(اقرب|قريب اكثر)/.test(text))
+        return { engine, reply: "أبشر، بجيب لك خيار أقرب.", action: { type: "modify", op: "replace", index: idx!, nearer: true, onlyThis } };
+      if (/(غير|بدل|ما عجبني|ماعجبني|غيره|ثاني غيره)/.test(text))
+        return {
+          engine,
+          reply: onlyThis ? "أبشر، بغيّره هو بس وأخلي الباقي مثل ما هو." : "أبشر، بغيّره وأحدّث اللي بعده عشان يكون قريب منه.",
+          action: { type: "modify", op: "replace", index: idx!, onlyThis },
+        };
+    }
     if (/(ضيف|اضف|زيد|زود|وبعدها|وبعده)/.test(text)) {
       const steps = stepsFrom(text);
-      if (steps.length === 1) return { engine, reply: `ضفت ${CATEGORY_META[steps[0].category].label} آخر الخطة.`, action: { type: "add", step: { ...steps[0], tags: findTags(text) } } };
+      if (steps.length === 1) return { engine, reply: `ضفت ${label(steps[0])} آخر الخطة.`, action: { type: "add", step: { ...steps[0], tags: findTags(text) } } };
     }
   }
 
@@ -136,14 +195,15 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
 
   // 2) Answer to a previous clarifying question
   if (ctx.pending) {
-    if (!steps.length) steps = ctx.pending.steps ?? [];
+    if (!steps.length)
+      steps = (ctx.pending.steps ?? []).map((st) => ({ ...st, subcategory: st.subcategory ?? findSubcategory(text, st.category) }));
     const request: ParsedRequest = {
       steps,
       district: district ?? ctx.pending.district,
       priority: priority ?? ctx.pending.priority ?? "balanced",
       tags: [...new Set([...(ctx.pending.tags ?? []), ...tags])],
     };
-    if (steps.length) return { engine, reply: "تمام، لقيت لك هالخيارات 👇", action: { type: "plan", request } };
+    if (steps.length) return { engine, reply: "تمام، لقيت لك هالخيارات", action: { type: "plan", request } };
   }
 
   // 3) Fresh request
@@ -156,29 +216,31 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
       };
     return {
       engine,
-      reply: "ما فهمت عليك تمام 😅 قول لي وش تبي؟ مثلاً: «أبي كوفي هادي بالملقا» أو «نادي وبعده كوفي وبعده مطعم».",
+      reply: "ما فهمت عليك تمام قول لي وش تبي؟ مثلاً: «أبي كوفي هادي بالملقا» أو «نادي وبعده كوفي وبعده مطعم».",
       action: { type: "chat" },
     };
   }
 
   const request: ParsedRequest = { steps, district, priority, tags };
   if (steps.length === 1) {
-    if (steps[0].category === "cafe" && !tags.length)
+    if (steps[0].category === "cafe" && !tags.length && !steps[0].subcategory)
       return {
         engine,
-        reply: "تفضل كوفي هادي أو فيه جلسات خارجية؟",
+        reply: "وش نوع الكوفي اللي تبيه؟",
         action: {
           type: "clarify",
-          question: "تفضل كوفي هادي أو فيه جلسات خارجية؟",
+          question: "وش نوع الكوفي اللي تبيه؟",
           options: [
             { label: "هادي", value: "هادي" },
-            { label: "جلسات خارجية", value: "جلسات خارجية" },
+            { label: "قهوة مختصة", value: "مختصة" },
+            { label: "للمذاكرة", value: "للمذاكرة" },
+            { label: "درايف ثرو", value: "درايف ثرو" },
             { label: "ما يفرق", value: "ما يفرق" },
           ],
           pending: request,
         },
       };
-    if (!priority && !district)
+    if (!priority && !district && !steps[0].subcategory)
       return {
         engine,
         reply: "تهمك المسافة أكثر أو التقييم؟",
@@ -194,10 +256,10 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
         },
       };
   }
-  const chain = steps.map((s) => CATEGORY_META[s.category].label).join(" ← ");
+  const chain = steps.map(label).join(" ← ");
   return {
     engine,
-    reply: steps.length > 1 ? `أبشر! بخطط لك: ${chain}، وكل محطة قريبة من اللي قبلها.` : "تمام، لقيت لك هالخيارات 👇",
+    reply: steps.length > 1 ? `أبشر! بخطط لك: ${chain}، وكل محطة قريبة من اللي قبلها.` : "تمام، لقيت لك هالخيارات",
     action: { type: "plan", request: { ...request, priority: priority ?? "balanced" } },
   };
 }

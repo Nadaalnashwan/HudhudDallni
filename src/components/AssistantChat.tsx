@@ -8,7 +8,8 @@ export const SUGGESTIONS = ["أبي قهوة", "أبي أتغدى", "أبي أت
 
 type Props = {
   messages: ChatMessage[];
-  busy: boolean;
+  busy: boolean; // shows the typing indicator
+  disabled?: boolean; // blocks new input while any plan update is in flight
   chosenIds: string[];
   from: LatLng;
   fromLabel: string;
@@ -19,7 +20,7 @@ type Props = {
   header?: React.ReactNode;
 };
 
-export default function AssistantChat({ messages, busy, chosenIds, from, fromLabel, onSend, onChoose, onDetails, onSelect, header }: Props) {
+export default function AssistantChat({ messages, busy, disabled = busy, chosenIds, from, fromLabel, onSend, onChoose, onDetails, onSelect, header }: Props) {
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function AssistantChat({ messages, busy, chosenIds, from, fromLab
   }, [messages, busy]);
 
   const submit = (t: string) => {
-    if (!t.trim() || busy) return;
+    if (!t.trim() || disabled) return;
     onSend(t.trim());
     setText("");
   };
@@ -92,7 +93,7 @@ export default function AssistantChat({ messages, busy, chosenIds, from, fromLab
       <div className="border-t border-line bg-surface p-3">
         <div className="mb-2 flex gap-2 overflow-x-auto scrollbar-none">
           {SUGGESTIONS.map((s) => (
-            <button key={s} onClick={() => submit(s)} disabled={busy} className="shrink-0 rounded-full bg-background px-3 py-1 text-xs hover:bg-brand-50 disabled:opacity-50">
+            <button key={s} onClick={() => submit(s)} disabled={disabled} className="shrink-0 rounded-full bg-background px-3 py-1 text-xs hover:bg-brand-50 disabled:opacity-50">
               {s}
             </button>
           ))}
@@ -104,7 +105,7 @@ export default function AssistantChat({ messages, busy, chosenIds, from, fromLab
             placeholder="اكتب طلبك... مثلاً: نادي وبعده كوفي وبعده مطعم"
             className="min-w-0 flex-1 rounded-full border border-line bg-background px-4 py-2.5 text-sm outline-none focus:border-brand-500"
           />
-          <button disabled={busy || !text.trim()} className="flex size-10 items-center justify-center rounded-full bg-brand-500 text-white disabled:opacity-40" aria-label="إرسال">
+          <button disabled={disabled || !text.trim()} className="flex size-10 items-center justify-center rounded-full bg-brand-500 text-white disabled:opacity-40" aria-label="إرسال">
             <span className="-scale-x-100">➤</span>
           </button>
         </form>

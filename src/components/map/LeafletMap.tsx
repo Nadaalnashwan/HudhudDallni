@@ -41,7 +41,7 @@ export default function LeafletMap({ origin, stops, alternatives, path, selected
     }
     alternatives.forEach((p) => {
       L.marker([p.location.lat, p.location.lng], {
-        icon: L.divIcon({ className: "hh-marker", html: pinHtml(CATEGORY_META[p.category].emoji, "#94a3b8", p.id === selectedId, true), iconSize: [26, 26], iconAnchor: [13, 26] }),
+        icon: L.divIcon({ className: "hh-marker", html: pinHtml("•", "#94a3b8", p.id === selectedId, true), iconSize: [26, 26], iconAnchor: [13, 26] }),
       })
         .on("click", () => onSelectRef.current(p))
         .addTo(g);

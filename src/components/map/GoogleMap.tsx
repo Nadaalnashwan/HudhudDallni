@@ -57,7 +57,7 @@ export default function GoogleMap(props: MapProps) {
         </AdvancedMarker>
         {alternatives.map((p) => (
           <AdvancedMarker key={p.id} position={p.location} title={p.name} onClick={() => onSelect(p)}>
-            <Pin html={pinHtml(CATEGORY_META[p.category].emoji, "#94a3b8", p.id === selectedId, true)} />
+            <Pin html={pinHtml("•", "#94a3b8", p.id === selectedId, true)} />
           </AdvancedMarker>
         ))}
         {stops.map((p, i) => (

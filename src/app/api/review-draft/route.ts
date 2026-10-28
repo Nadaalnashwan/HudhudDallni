@@ -18,9 +18,12 @@ const OPENERS = {
   bad: "للأسف تجربتي ما كانت حلوة",
 };
 
+/** Drop the synthetic-data marker from a name so the draft reads naturally. */
+const displayName = (n: string) => n.replace(" (تجريبي)", "").replace(/^تجريبي\s*-\s*/, "");
+
 function templateDraft(b: Body) {
   const kind = CATEGORY_META[b.category].label;
-  let text = `${OPENERS[b.experience]} في ${b.placeName.replace(" (تجريبي)", "")}.`;
+  let text = `${OPENERS[b.experience]} في ${displayName(b.placeName)}.`;
   if (b.reasons.length) text += ` ${b.experience === "excellent" ? "أكثر شي عجبني" : "الملاحظات"}: ${b.reasons.join("، ")}.`;
   if (b.note) text += ` ${b.note}`;
   if (b.experience === "excellent") text += ` أنصح فيه لمن يدور ${kind} حلو.`;

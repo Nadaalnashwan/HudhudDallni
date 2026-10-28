@@ -1,8 +1,9 @@
 "use client";
-import { CATEGORY_META } from "@/lib/catalog";
+import { Lightbulb } from "lucide-react";
 import { formatKm, haversineKm } from "@/lib/geo";
 import type { LatLng, Place } from "@/lib/types";
-import { PlacePhoto, Price, Stars, TagChips } from "./ui";
+import { CategoryIcon } from "./icons";
+import { DemoBadge, PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
 
 type Props = {
   place: Place;
@@ -35,14 +36,19 @@ export default function PlaceCard({ place, from, fromLabel, reason, badge, selec
           <h4 className="line-clamp-1 font-semibold">{place.name}</h4>
           <Stars value={place.rating} />
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>{CATEGORY_META[place.category].emoji} {CATEGORY_META[place.category].label}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span className="inline-flex items-center gap-1">
+            <CategoryIcon category={place.category} className="size-3.5" /> {typeLabel(place)}
+          </span>
           <Price level={place.priceLevel} />
           {dist !== undefined && <span>• {formatKm(dist)}{fromLabel ? ` من ${fromLabel}` : ""}</span>}
+          <DemoBadge place={place} />
         </div>
         <p className="line-clamp-1 text-xs text-muted">{place.address}</p>
         {!compact && <TagChips place={place} />}
-        {reason && <p className="rounded-lg bg-brand-50 p-2 text-xs leading-5 text-brand-700">💡 {reason}</p>}
+        {reason && <p className="flex gap-1.5 rounded-lg bg-brand-50 p-2 text-xs leading-5 text-brand-700">
+            <Lightbulb className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {reason}
+          </p>}
         {(onDetails || onChoose) && (
           <div className="flex gap-2 pt-1">
             {onChoose && (

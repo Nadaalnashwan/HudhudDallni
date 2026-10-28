@@ -1,18 +1,21 @@
 "use client";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Plan, Preferences, Review, Visit } from "./types";
+import { getBrowserSupabase } from "./supabase";
+import type { Place, Plan, Preferences, Review, Visit } from "./types";
 
 /**
- * Persistence for our own Hudhud data (plans, preferences, reviews).
- * Uses Supabase when configured, otherwise the browser's localStorage (Demo Mode).
- * Reviews here are our app's reviews — never sent to Google.
+ * Our own Hudhud data (preferences, plans, visits, feedback, reviews).
+ *
+ * Supabase mode: the user gets an anonymous Supabase Auth session, and every
+ * private row is owned by auth.uid() under the hudhud_demo RLS policies —
+ * no service-role key, no open writes. Only places that exist in
+ * hudhud_demo.places can be referenced (foreign keys).
+ *
+ * Local mode (clearly labelled in the UI): used when Supabase or anonymous
+ * sign-in is not available, or for the offline demo places. Reviews are never
+ * sent to Google.
  */
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-let client: SupabaseClient | null = null;
-const db = () => (url && anon ? (client ??= createClient(url, anon)) : null);
-export const storeMode = () => (url && anon ? "supabase" : "local");
+export const DEFAULT_PREFS: Preferences = { consent: false, likes: [], avoid: [], notes: [], neighborhoods: [], cuisines: [], cafeTypes: [] };
 
 const ls = {
   get<T>(k: string, fallback: T): T {
@@ -30,9 +33,45 @@ const ls = {
   },
 };
 
-export const DEFAULT_PREFS: Preferences = { consent: false, likes: [], avoid: [], notes: [] };
+// ---------------------------------------------------------------- auth
 
-export function getUserId(): string {
+export type StoreStatus = { mode: "supabase" | "local"; reason?: string };
+let status: StoreStatus | null = null;
+let userPromise: Promise<string | null> | null = null;
+
+/** Anonymous Supabase session (needs "Allow anonymous sign-ins" in the dashboard). */
+export function ensureUser(): Promise<string | null> {
+  const db = getBrowserSupabase();
+  if (!db) {
+    status = { mode: "local", reason: "Supabase غير مهيأ" };
+    return Promise.resolve(null);
+  }
+  return (userPromise ??= (async () => {
+    const { data } = await db.auth.getSession();
+    if (data.session) {
+      status = { mode: "supabase" };
+      return data.session.user.id;
+    }
+    const { data: signed, error } = await db.auth.signInAnonymously();
+    if (error || !signed.user) {
+      status = { mode: "local", reason: `تسجيل الدخول المجهول غير مفعّل (${error?.message ?? "no user"})` };
+      userPromise = null; // allow a retry after the setting is enabled
+      return null;
+    }
+    status = { mode: "supabase" };
+    return signed.user.id;
+  })());
+}
+
+export async function storeStatus(): Promise<StoreStatus> {
+  await ensureUser();
+  return status ?? { mode: "local" };
+}
+
+/** Only database places can be written to hudhud_demo tables. */
+const dbPlace = (p: { source: Place["source"] }) => p.source === "supabase";
+
+export function localUserId(): string {
   let id = ls.get<string | null>("hudhud.userId", null);
   if (!id) {
     id = crypto.randomUUID();
@@ -41,78 +80,132 @@ export function getUserId(): string {
   return id;
 }
 
+// ---------------------------------------------------------------- preferences
+
 export async function loadPreferences(): Promise<Preferences> {
-  const local = ls.get<Preferences>("hudhud.prefs", DEFAULT_PREFS);
-  const d = db();
-  if (!d) return local;
-  const { data } = await d.from("preferences").select("data").eq("user_id", getUserId()).maybeSingle();
-  return (data?.data as Preferences) ?? local;
+  const local = { ...DEFAULT_PREFS, ...ls.get<Partial<Preferences>>("hudhud.prefs", {}) };
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (!uid || !db) return local;
+  const { data, error } = await db.from("user_preferences").select("preferences,learning_consent").eq("user_id", uid).maybeSingle();
+  if (error || !data) return local;
+  return { ...DEFAULT_PREFS, ...(data.preferences as Partial<Preferences>), consent: data.learning_consent };
 }
 
-export async function savePreferences(p: Preferences) {
+export async function savePreferences(p: Preferences): Promise<StoreStatus["mode"]> {
   ls.set("hudhud.prefs", p);
-  const d = db();
-  if (d) await d.from("preferences").upsert({ user_id: getUserId(), data: p, consent: p.consent, updated_at: new Date().toISOString() });
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (!uid || !db) return "local";
+  const { consent, ...preferences } = p;
+  const { error } = await db
+    .from("user_preferences")
+    .upsert({ user_id: uid, preferences, learning_consent: consent, updated_at: new Date().toISOString() });
+  if (error) console.error("save preferences", error);
+  return error ? "local" : "supabase";
 }
+
+/** "امسح تفضيلاتي": removes the stored row entirely, not just the values. */
+export async function clearPreferences() {
+  ls.set("hudhud.prefs", DEFAULT_PREFS);
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (uid && db) await db.from("user_preferences").delete().eq("user_id", uid);
+}
+
+// ---------------------------------------------------------------- plans & visits
 
 export async function savePlan(plan: Plan) {
   ls.set("hudhud.lastPlan", plan);
-  const d = db();
-  if (d)
-    await d.from("plans").upsert({
-      id: plan.id,
-      user_id: getUserId(),
-      stops: plan.stops.map((s) => ({ category: s.step.category, placeId: s.place.id, name: s.place.name, locked: s.locked })),
-      started_at: plan.startedAt ?? null,
-    });
+  if (!plan.startedAt || !plan.stops.every((s) => dbPlace(s.place))) return;
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (!uid || !db) return;
+  const { error } = await db.from("outing_plans").upsert({ id: plan.id, user_id: uid, title: plan.stops.map((s) => s.place.name).join(" ← ").slice(0, 200), status: "saved", updated_at: new Date().toISOString() });
+  if (error) return console.error("save plan", error);
+  await db.from("outing_stops").delete().eq("plan_id", plan.id);
+  await db.from("outing_stops").insert(plan.stops.map((s, i) => ({ plan_id: plan.id, place_id: s.place.id, stop_order: i + 1, is_locked: s.locked })));
 }
 
 export const loadLastPlan = () => ls.get<Plan | null>("hudhud.lastPlan", null);
-
 export const loadVisits = () => ls.get<Visit[]>("hudhud.visits", []);
-export async function saveVisits(v: Visit[]) {
-  ls.set("hudhud.visits", v);
-}
-export async function recordVisit(v: Visit) {
-  const d = db();
-  if (d) await d.from("visits").insert({ user_id: getUserId(), plan_id: v.planId, place_id: v.placeId, place_name: v.placeName, status: v.status });
+export const saveVisits = (v: Visit[]) => ls.set("hudhud.visits", v);
+
+/** Called when the user confirms the visit. Returns the visit row id in Supabase mode. */
+export async function confirmVisit(v: Visit): Promise<string | undefined> {
+  if (!dbPlace(v)) return undefined;
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (!uid || !db) return undefined;
+  const { data, error } = await db.from("visits").insert({ user_id: uid, place_id: v.placeId, confirmed_by_user: true }).select("id").single();
+  if (error) console.error("visit", error);
+  return data?.id;
 }
 
-export async function publishReview(r: Review) {
-  const all = ls.get<Review[]>("hudhud.reviews", []);
-  ls.set("hudhud.reviews", [r, ...all]);
-  const d = db();
-  if (d) {
-    const { error } = await d.from("reviews").insert({
-      id: r.id,
-      user_id: r.userId,
+/** Private feedback, stored only when the user agreed to let it improve recommendations. */
+export async function saveFeedback(v: Visit, f: { sentiment: "positive" | "neutral" | "negative"; reason?: string; notes?: string }) {
+  if (!dbPlace(v)) return;
+  const uid = await ensureUser();
+  const db = getBrowserSupabase();
+  if (!uid || !db) return;
+  const { error } = await db.from("feedback").insert({ user_id: uid, place_id: v.placeId, ...f, use_for_learning: true });
+  if (error) console.error("feedback", error);
+}
+
+// ---------------------------------------------------------------- reviews
+
+export async function publishReview(
+  r: Omit<Review, "id" | "userId" | "storage" | "createdAt">,
+  v: Visit,
+  extra: { visitId?: string; negativeReason?: string },
+): Promise<Review["storage"]> {
+  const createdAt = new Date().toISOString();
+  const uid = dbPlace(v) ? await ensureUser() : null;
+  const db = getBrowserSupabase();
+  if (uid && db) {
+    const { error } = await db.from("reviews").insert({
+      user_id: uid,
       place_id: r.placeId,
-      place_name: r.placeName,
+      visit_id: extra.visitId ?? null,
       rating: r.rating,
-      experience: r.experience,
-      reasons: r.reasons,
-      body: r.body,
+      review_text: r.body,
+      negative_reason: extra.negativeReason ?? null,
+      publish_consent: true,
+      is_published: true,
     });
-    if (error) throw error;
+    if (error) throw new Error(error.message);
+    return "supabase";
   }
+  const all = ls.get<Review[]>("hudhud.reviews", []);
+  ls.set("hudhud.reviews", [{ ...r, id: crypto.randomUUID(), userId: localUserId(), createdAt, storage: "local" }, ...all]);
+  return "local";
 }
 
-export async function listReviews(placeId: string): Promise<Review[]> {
-  const d = db();
-  if (d) {
-    const { data } = await d.from("reviews").select("*").eq("place_id", placeId).order("created_at", { ascending: false });
-    if (data)
-      return data.map((x) => ({
+type ReviewRow = { id: string; user_id: string; place_id: string; rating: number; review_text: string | null; negative_reason: string | null; created_at: string };
+
+/** Published Hudhud reviews for a place — separate from the seeded/synthetic rating. */
+export async function listReviews(place: Place): Promise<Review[]> {
+  const db = getBrowserSupabase();
+  if (db && dbPlace(place)) {
+    const { data, error } = await db
+      .from("reviews")
+      .select("id,user_id,place_id,rating,review_text,negative_reason,created_at")
+      .eq("place_id", place.id)
+      .eq("is_published", true)
+      .order("created_at", { ascending: false });
+    if (!error && data)
+      return (data as ReviewRow[]).map((x) => ({
         id: x.id,
         placeId: x.place_id,
-        placeName: x.place_name,
+        placeName: place.name,
         rating: x.rating,
-        experience: x.experience,
-        reasons: x.reasons ?? [],
-        body: x.body,
+        experience: x.rating >= 4 ? "excellent" : x.rating === 3 ? "average" : "bad",
+        reasons: x.negative_reason ? x.negative_reason.split("، ") : [],
+        body: x.review_text ?? "",
         createdAt: x.created_at,
         userId: x.user_id,
+        storage: "supabase",
       }));
   }
-  return ls.get<Review[]>("hudhud.reviews", []).filter((r) => r.placeId === placeId);
+  return ls.get<Review[]>("hudhud.reviews", []).filter((r) => r.placeId === place.id);
 }

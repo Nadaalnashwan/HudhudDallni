@@ -1,6 +1,29 @@
 export type LatLng = { lat: number; lng: number };
 
-export type Category = "cafe" | "restaurant" | "gym" | "dessert" | "park" | "mall";
+export type Category = "cafe" | "restaurant" | "gym" | "dessert" | "park" | "mall" | "entertainment";
+
+export type Subcategory =
+  | "italian"
+  | "fast_food"
+  | "burger"
+  | "pizza"
+  | "saudi"
+  | "shawarma"
+  | "indian"
+  | "asian"
+  | "seafood"
+  | "grill"
+  | "specialty_coffee"
+  | "quiet"
+  | "study"
+  | "drive_thru"
+  | "fitness"
+  | "women"
+  | "bakery"
+  | "ice_cream"
+  | "public_park"
+  | "shopping"
+  | "games";
 
 /** Tags we only attach when the data source supports them (never assumed). */
 export type PlaceTag = "quiet" | "outdoor" | "family" | "budget" | "work" | "late";
@@ -9,17 +32,21 @@ export type Place = {
   id: string;
   name: string;
   category: Category;
+  subcategory?: Subcategory;
   location: LatLng;
   address: string;
   district?: string;
   rating?: number;
   ratingCount?: number;
   priceLevel?: number; // 1-4
-  photoUrl?: string;
+  photoUrl?: string; // a real photo of this venue (Google / image_url)
   tags: PlaceTag[];
+  labels?: string[]; // raw Arabic tags from the database
   summary?: string;
   openNow?: boolean;
-  source: "google" | "demo";
+  hours?: string;
+  source: "supabase" | "google" | "demo";
+  isDemo: boolean; // synthetic record — always labelled in the UI
 };
 
 export type Priority = "distance" | "rating" | "balanced";
@@ -27,6 +54,7 @@ export type Priority = "distance" | "rating" | "balanced";
 /** One stop the user asked for, in order. */
 export type StepSpec = {
   category: Category;
+  subcategory?: Subcategory;
   query?: string; // free text, e.g. "كوفي مختص"
   placeName?: string; // user named a specific place
   tags?: PlaceTag[];
@@ -44,20 +72,21 @@ export type PlanStop = {
   anchorLabel: string; // "موقعك" / "النادي" ...
 };
 
-export type RouteLeg = { distanceMeters: number; durationSeconds: number };
+export type RouteLeg = { distanceMeters: number; durationSeconds?: number };
 
 export type RouteResult = {
   path: LatLng[];
   legs: RouteLeg[];
   distanceMeters: number;
-  durationSeconds: number;
-  source: "google" | "demo";
+  durationSeconds?: number; // only from Google Routes — never estimated
+  source: "google" | "straight_line";
 };
 
 export type Plan = {
   id: string;
   origin: LatLng;
   originLabel: string;
+  district?: string;
   priority: Priority;
   stops: PlanStop[];
   route?: RouteResult;
@@ -70,6 +99,11 @@ export type Preferences = {
   avoid: string[]; // free-form avoid notes like "crowded"
   minRating?: number;
   notes: string[];
+  neighborhoods: string[];
+  cuisines: Subcategory[]; // preferred restaurant subcategories
+  cafeTypes: Subcategory[];
+  budget?: "low" | "any";
+  distance?: Priority; // default ranking when the user does not say
 };
 
 export type ClarifyOption = { label: string; value: string };
@@ -78,7 +112,15 @@ export type ClarifyOption = { label: string; value: string };
 export type AssistantAction =
   | { type: "clarify"; question: string; options: ClarifyOption[]; pending: Partial<ParsedRequest> }
   | { type: "plan"; request: ParsedRequest }
-  | { type: "modify"; op: "replace" | "lock" | "unlock" | "remove"; index: number }
+  | {
+      type: "modify";
+      op: "replace" | "lock" | "unlock" | "remove";
+      index: number;
+      /** replace only: new spec for that stop, e.g. a different cuisine */
+      step?: Partial<StepSpec>;
+      nearer?: boolean; // "أبي كوفي أقرب"
+      onlyThis?: boolean; // "غير المطعم بس" — keep the stops after it
+    }
   | { type: "add"; step: StepSpec }
   | { type: "chat" };
 
@@ -109,12 +151,16 @@ export type Review = {
   body: string;
   createdAt: string;
   userId: string;
+  storage: "supabase" | "local";
 };
 
 export type Visit = {
   placeId: string;
   placeName: string;
   category: Category;
+  subcategory?: Subcategory;
+  district?: string;
+  source: Place["source"];
   planId: string;
   status: "pending" | "visited" | "skipped" | "reviewed";
 };

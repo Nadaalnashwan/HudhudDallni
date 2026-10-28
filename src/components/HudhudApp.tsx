@@ -1,45 +1,48 @@
 "use client";
+import { Bird, Brain, Check, Database, FastForward, FlaskConical, LocateFixed, Settings, Sparkles, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CATEGORY_META, DISTRICTS, TAG_LABELS } from "@/lib/catalog";
+import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { formatKm, RIYADH_CENTER } from "@/lib/geo";
-import { DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, recordVisit, savePlan, savePreferences, saveVisits, storeMode } from "@/lib/store";
-import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Visit } from "@/lib/types";
+import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, savePlan, savePreferences, saveVisits, storeStatus, type StoreStatus } from "@/lib/store";
+import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
+import { CategoryIcon } from "./icons";
 import FeedbackFlow from "./FeedbackFlow";
 import MapView from "./map/MapView";
 import PlaceCard from "./PlaceCard";
 import PlaceSheet from "./PlaceSheet";
 import PlanPipeline from "./PlanPipeline";
+import { typeLabel } from "./ui";
 
 const VISIT_DELAY_MS = 30 * 60 * 1000; // ask about a visit 30 min after the outing started
 const uid = () => crypto.randomUUID();
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  text: "هلا والله! أنا مساعد هدهد الذكي 🐦\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
+  text: "هلا والله! أنا مساعد هدهد الذكي.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
-const QUICK_CATEGORIES: { label: string; prompt: string }[] = [
-  { label: "☕ كوفي", prompt: "أبي قهوة" },
-  { label: "🍽️ مطاعم", prompt: "أبي مطعم" },
-  { label: "🏋️ أندية", prompt: "أبي نادي" },
-  { label: "🍰 حلا", prompt: "أبي حلا" },
-  { label: "🌳 حدائق", prompt: "أبي ممشى" },
-  { label: "🛍️ مولات", prompt: "أبي مول" },
-];
+const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
+
+type Config = { places: Place["source"]; placesCount?: number; dbError?: string; ai: "groq" | "rules" };
+type RebuildOpts = { place?: Place; exclude?: boolean; step?: Partial<StepSpec>; nearer?: boolean; onlyThis?: boolean };
 
 type Origin = { loc: LatLng; label: string };
 type BuildArgs = {
   steps: StepSpec[];
   origin: Origin;
+  district?: string;
   priority: Priority;
   tags: PlaceTag[];
   keep?: (Place | null)[];
   locked?: boolean[];
   excluded?: string[][];
+  nearest?: boolean[];
 };
 
 export default function HudhudApp() {
-  const [config, setConfig] = useState<{ places: string; ai: string } | null>(null);
+  const [config, setConfig] = useState<Config | null>(null);
+  const [store, setStore] = useState<StoreStatus | null>(null);
+  const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [userOrigin, setUserOrigin] = useState<Origin>({ loc: RIYADH_CENTER, label: "موقعك" });
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [pending, setPending] = useState<Partial<ParsedRequest> | undefined>();
@@ -61,6 +64,7 @@ export default function HudhudApp() {
   useEffect(() => {
     fetch("/api/config").then((r) => r.json()).then(setConfig).catch(() => {});
     loadPreferences().then(setPrefs);
+    storeStatus().then(setStore);
     const last = loadLastPlan();
     if (last?.startedAt) setPlan(last);
     setVisits(loadVisits());
@@ -79,16 +83,36 @@ export default function HudhudApp() {
   }, [checkReturn]);
 
   // --- planning
+  /** Calls the planner; surfaces database failures instead of silently swapping data sources. */
   const runPlan = async (a: BuildArgs, keepId?: string): Promise<Plan | null> => {
-    const res = await fetch("/api/plan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...a, origin: a.origin.loc, originLabel: a.origin.label, preferences: prefs }),
-    });
-    if (!res.ok) return null;
+    let res: Response;
+    try {
+      res = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...a, origin: a.origin.loc, originLabel: a.origin.label, preferences: prefs }),
+      });
+    } catch {
+      say({ role: "assistant", text: "صار خطأ بالاتصال، جرب مرة ثانية." });
+      return null;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      say({
+        role: "assistant",
+        text:
+          err.error === "database_unavailable"
+            ? "تعذر الاتصال بقاعدة بيانات الأماكن حالياً، فما أقدر أقترح أماكن الحين. جرب بعد شوي."
+            : "صار خطأ أثناء تجهيز الخطة، جرب مرة ثانية.",
+      });
+      return null;
+    }
     const { stops, route } = (await res.json()) as { stops: PlanStop[]; route: Plan["route"] };
-    if (!stops.length) return null;
-    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, priority: a.priority, stops, route };
+    if (!stops.length) {
+      say({ role: "assistant", text: "ما لقيت أماكن مطابقة لطلبك في البيانات. جرب نوع أو حي ثاني." });
+      return null;
+    }
+    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, district: a.district, priority: a.priority, stops, route };
     setPlan(next);
     setFocus(null);
     savePlan(next);
@@ -98,20 +122,24 @@ export default function HudhudApp() {
   const argsFrom = (p: Plan, steps = p.stops.map((s) => s.step)): BuildArgs => ({
     steps,
     origin: { loc: p.origin, label: p.originLabel },
+    district: p.district,
     priority: p.priority,
     tags,
   });
 
-  const prefsNote = () =>
-    prefs.consent && prefs.likes.length ? `\n🧠 حطيت بالاعتبار تفضيلاتك: ${prefs.likes.map((t) => TAG_LABELS[t]).join("، ")}` : "";
+  const prefsNote = () => {
+    if (!prefs.consent) return "";
+    const items = [...prefs.likes.map((t) => TAG_LABELS[t]), ...[...prefs.cuisines, ...prefs.cafeTypes].map((s) => SUBCATEGORY_META[s].label)];
+    return items.length ? `\nحطيت بالاعتبار تفضيلاتك المحفوظة: ${[...new Set(items)].join("، ")}` : "";
+  };
 
   const describeNew = (p: Plan) => {
     if (p.stops.length === 1) {
       const s = p.stops[0];
-      say({ role: "assistant", text: `أنسب خيار لك: ${s.place.name}\n💡 ${s.reason}${prefsNote()}\nوهذي بدائل لو حبيت تغيّر 👇`, places: [s.place, ...s.alternatives] });
+      say({ role: "assistant", text: `أنسب خيار لك: ${s.place.name}\n${s.reason}${prefsNote()}\nوهذي بدائل لو حبيت تغيّر:`, places: [s.place, ...s.alternatives] });
     } else {
-      const lines = p.stops.map((s, i) => `${i + 1}. ${CATEGORY_META[s.step.category].emoji} ${s.place.name}${i ? ` — ${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}` : ""}`);
-      say({ role: "assistant", text: `خطتك جاهزة ✨\n${lines.join("\n")}${prefsNote()}\nتقدر تغيّر أي محطة أو تثبّتها من البطاقات أو تقول لي مثلاً «غير الكوفي».` });
+      const lines = p.stops.map((s, i) => `${i + 1}. ${typeLabel(s.step)}: ${s.place.name}${i ? ` — ${formatKm(s.distanceFromPrevKm ?? 0)} بخط مستقيم عن ${s.anchorLabel}` : ""}`);
+      say({ role: "assistant", text: `خطتك جاهزة:\n${lines.join("\n")}${prefsNote()}\nتقدر تغيّر أي محطة أو تثبّتها من البطاقات أو تقول لي مثلاً «غير الكوفي» أو «خل المطعم إيطالي».` });
     }
   };
 
@@ -121,7 +149,7 @@ export default function HudhudApp() {
       const label = "ال" + CATEGORY_META[s.step.category].label;
       if (before.stops[i]?.place.id === s.place.id) {
         if (i > changedAt)
-          parts.push(s.locked ? `${label} مثبّت 📌 ما غيرته` : `${label} للحين الأنسب (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}) فخليته`);
+          parts.push(s.locked ? `${label} مثبّت فما غيرته` : `${label} للحين الأنسب (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}) فخليته`);
         return;
       }
       parts.push(i === changedAt ? `غيّرت ${label} إلى ${s.place.name}` : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
@@ -130,19 +158,31 @@ export default function HudhudApp() {
   };
 
   /** Rebuild from index i: earlier stops and locked later stops stay; the rest re-anchor on the new chain. */
-  const rebuildFrom = async (i: number, override: { place?: Place; exclude?: boolean }) => {
-    if (!plan) return;
+  const rebuildFrom = async (i: number, o: RebuildOpts) => {
+    if (!plan || busyIndex !== null) return; // one plan update at a time
     setBusyIndex(i);
-    const keep = plan.stops.map((s, j) => (j < i ? s.place : j === i ? override.place ?? null : s.locked ? s.place : null));
-    const excluded = plan.stops.map((s, j) => (j === i && override.exclude ? [...s.excluded, s.place.id] : s.excluded));
-    const next = await runPlan({ ...argsFrom(plan), keep, excluded, locked: plan.stops.map((s, j) => (j === i ? false : s.locked)) }, plan.id);
+    // "بس" keeps everything after the changed stop; otherwise only locked stops survive.
+    const keep = plan.stops.map((s, j) => (j < i ? s.place : j === i ? o.place ?? null : s.locked || o.onlyThis ? s.place : null));
+    const excluded = plan.stops.map((s, j) => (j === i && o.exclude ? [...s.excluded, s.place.id] : s.excluded));
+    const steps = plan.stops.map((s, j) => (j === i && o.step ? { ...s.step, ...o.step } : s.step));
+    const next = await runPlan(
+      {
+        ...argsFrom(plan, steps),
+        keep,
+        excluded,
+        locked: plan.stops.map((s, j) => (j === i ? false : s.locked)),
+        nearest: plan.stops.map((_, j) => j === i && Boolean(o.nearer)),
+      },
+      plan.id,
+    );
     setBusyIndex(null);
     if (next) describeChange(plan, next, i);
   };
 
-  const replaceStop = (i: number) => {
-    if (plan?.stops[i].locked) return say({ role: "assistant", text: "هالمحطة مثبّتة 📌 فك التثبيت أول عشان أغيّرها." });
-    return rebuildFrom(i, { exclude: true });
+  const replaceStop = (i: number, o: Omit<RebuildOpts, "place"> = {}) => {
+    if (plan?.stops[i].locked) return say({ role: "assistant", text: "هالمحطة مثبّتة. فك التثبيت أول عشان أغيّرها." });
+    // A new type is a new search; only a plain "غير" excludes the current pick.
+    return rebuildFrom(i, { exclude: !o.step, ...o });
   };
 
   const chooseAlternative = (place: Place) => {
@@ -174,7 +214,7 @@ export default function HudhudApp() {
       plan.id,
     );
     setBusy(false);
-    if (next) say({ role: "assistant", text: `شلت ${CATEGORY_META[plan.stops[i].step.category].label} من الخطة${i < rest.length ? " وحدّثت اللي بعده" : ""}.` });
+    if (next) say({ role: "assistant", text: `شلت ${typeLabel(plan.stops[i].step)} من الخطة${i < rest.length ? " وحدّثت اللي بعده" : ""}.` });
   };
 
   const addStep = async (step: StepSpec, place?: Place) => {
@@ -183,7 +223,7 @@ export default function HudhudApp() {
     const steps = [...(base?.stops.map((s) => s.step) ?? []), step];
     const next = await runPlan(
       {
-        ...(base ? argsFrom(base, steps) : { steps, origin: userOrigin, priority: "balanced" as Priority, tags }),
+        ...(base ? argsFrom(base, steps) : { steps, origin: userOrigin, priority: defaultPriority(), tags }),
         keep: [...(base?.stops.map((s) => s.place) ?? []), place ?? null],
         locked: [...(base?.stops.map((s) => s.locked) ?? []), false],
         excluded: [...(base?.stops.map((s) => s.excluded) ?? []), []],
@@ -193,8 +233,31 @@ export default function HudhudApp() {
     setBusy(false);
     if (next) {
       const s = next.stops[next.stops.length - 1];
-      say({ role: "assistant", text: `ضفت ${CATEGORY_META[s.step.category].label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}).` });
+      say({ role: "assistant", text: `ضفت ${typeLabel(s.step)}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} بخط مستقيم عن ${s.anchorLabel}).` });
     }
+  };
+
+  /** A learned distance/rating preference applies only when the user didn't state one. */
+  const defaultPriority = (stated?: Priority): Priority =>
+    stated && stated !== "balanced" ? stated : prefs.consent && prefs.distance ? prefs.distance : stated ?? "balanced";
+
+  /** Category chips and subcategory filters: a direct, filtered database query (no chat round-trip). */
+  const browse = async (category: Category, subcategory?: Subcategory) => {
+    setActiveCategory(category);
+    setPanelOpen(true);
+    setPending(undefined);
+    say({ role: "user", text: subcategory ? `${CATEGORY_META[category].plural}: ${SUBCATEGORY_META[subcategory].label}` : CATEGORY_META[category].plural });
+    setBusy(true);
+    const keepArea = plan && plan.stops.length === 1 ? { loc: plan.origin, label: plan.originLabel, district: plan.district } : null;
+    const p = await runPlan({
+      steps: [{ category, subcategory }],
+      origin: keepArea ? { loc: keepArea.loc, label: keepArea.label } : userOrigin,
+      district: keepArea?.district,
+      priority: defaultPriority(plan?.priority),
+      tags: [],
+    });
+    setBusy(false);
+    if (p) describeNew(p);
   };
 
   // --- chat
@@ -221,15 +284,16 @@ export default function HudhudApp() {
         say({ role: "assistant", text: out.reply });
         const req = a.request;
         setTags(req.tags);
-        const origin = req.district && DISTRICTS[req.district] ? { loc: DISTRICTS[req.district], label: `حي ${req.district}` } : userOrigin;
+        const district = req.district && DISTRICTS[req.district] ? req.district : undefined;
+        const origin = district ? { loc: DISTRICTS[district], label: `حي ${district}` } : userOrigin;
         const steps = req.steps.map((s) => ({ ...s, tags: [...new Set([...(s.tags ?? []), ...req.tags])] }));
+        setActiveCategory(steps.length === 1 ? steps[0].category : null);
         setBusy(true);
-        const p = await runPlan({ steps, origin, priority: req.priority ?? "balanced", tags: req.tags });
+        const p = await runPlan({ steps, origin, district, priority: defaultPriority(req.priority), tags: req.tags });
         if (p) describeNew(p);
-        else say({ role: "assistant", text: "ما لقيت أماكن مناسبة 😔 جرب حي ثاني أو طلب مختلف." });
       } else if (a.type === "modify") {
         say({ role: "assistant", text: out.reply });
-        if (a.op === "replace") await replaceStop(a.index);
+        if (a.op === "replace") await replaceStop(a.index, { step: a.step, nearer: a.nearer, onlyThis: a.onlyThis });
         else if (a.op === "lock") toggleLock(a.index, true);
         else if (a.op === "unlock") toggleLock(a.index, false);
         else await removeStop(a.index);
@@ -251,13 +315,19 @@ export default function HudhudApp() {
     const started = { ...plan, startedAt: new Date().toISOString() };
     setPlan(started);
     savePlan(started);
-    const v: Visit[] = started.stops.map((s) => ({ placeId: s.place.id, placeName: s.place.name, category: s.step.category, planId: started.id, status: "pending" }));
+    const v: Visit[] = started.stops.map((s) => ({
+      placeId: s.place.id,
+      placeName: s.place.name,
+      category: s.step.category,
+      subcategory: s.place.subcategory,
+      district: s.place.district,
+      source: s.place.source,
+      planId: started.id,
+      status: "pending",
+    }));
     setVisits(v);
     saveVisits(v);
-    say({ role: "assistant", text: "بالتوفيق في طلعتك! 🚗 فتحت لك المسار، ولما ترجع للتطبيق بسألك عن تجربتك." });
-    const pts = started.stops.map((s) => `${s.place.location.lat},${s.place.location.lng}`);
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${plan.origin.lat},${plan.origin.lng}&destination=${pts[pts.length - 1]}&waypoints=${pts.slice(0, -1).join("|")}&travelmode=driving`;
-    window.open(url, "_blank", "noopener");
+    say({ role: "assistant", text: "بالتوفيق في طلعتك! المسار على الخريطة، ولما ترجع للتطبيق بسألك عن تجربتك." });
   };
 
   const finishVisit = (status: Visit["status"], message?: string) => {
@@ -265,7 +335,6 @@ export default function HudhudApp() {
     const next = visits.map((v) => (v === pendingVisit ? { ...v, status } : v));
     setVisits(next);
     saveVisits(next);
-    recordVisit({ ...pendingVisit, status });
     if (message) say({ role: "assistant", text: message });
     if (!next.some((v) => v.status === "pending")) setFeedbackOn(false);
   };
@@ -273,6 +342,10 @@ export default function HudhudApp() {
   const updatePrefs = (p: Preferences) => {
     setPrefs(p);
     savePreferences(p);
+  };
+  const resetPrefs = () => {
+    setPrefs({ ...DEFAULT_PREFS, consent: prefs.consent });
+    clearPreferences();
   };
 
   // --- map data
@@ -302,32 +375,50 @@ export default function HudhudApp() {
       {/* Top bar (Hudhud-style search) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[1000] space-y-2 p-3 md:right-[420px]">
         <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-surface p-2 shadow-lg">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-brand-500 text-lg text-white">🐦</div>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-brand-500 text-white">
+            <Bird className="size-5" aria-hidden />
+          </div>
           <button onClick={() => setPanelOpen(true)} className="flex-1 text-right text-sm text-muted">
             وين ودك تروح اليوم؟
           </button>
-          <button onClick={() => setPanelOpen(true)} className="rounded-xl bg-gradient-to-l from-brand-500 to-teal-400 px-3 py-1.5 text-sm font-medium text-white md:hidden">
-            ✨ اسأل هدهد
+          <button onClick={() => setPanelOpen(true)} className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-brand-500 to-teal-400 px-3 py-1.5 text-sm font-medium text-white md:hidden">
+            <Sparkles className="size-4" aria-hidden /> اسأل هدهد
           </button>
-          <button onClick={() => setPrefsOpen(true)} className="flex size-9 items-center justify-center rounded-xl hover:bg-background" aria-label="تفضيلاتي">
-            ⚙️
+          <button onClick={() => setPrefsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="تفضيلاتي">
+            <Settings className="size-5" />
           </button>
         </div>
         <div className="pointer-events-auto flex gap-2 overflow-x-auto scrollbar-none">
           {QUICK_CATEGORIES.map((c) => (
-            <button key={c.label} onClick={() => (setPanelOpen(true), send(c.prompt))} disabled={busy} className="shrink-0 rounded-full bg-surface px-3 py-1.5 text-sm shadow">
-              {c.label}
+            <button
+              key={c}
+              onClick={() => browse(c)}
+              disabled={busy}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm shadow ${activeCategory === c ? "bg-brand-500 text-white" : "bg-surface"}`}
+            >
+              <CategoryIcon category={c} className="size-4" /> {CATEGORY_META[c].plural}
             </button>
           ))}
         </div>
-        {config && (config.places === "demo" || config.ai === "rules") && (
-          <div className="pointer-events-auto inline-block rounded-full bg-amber-100 px-3 py-1 text-[11px] text-amber-900 shadow">
-            🧪 وضع تجريبي:{config.places === "demo" ? " أماكن تجريبية" : ""}
-            {config.places === "demo" && config.ai === "rules" ? " •" : ""}
-            {config.ai === "rules" ? " فهم الطلبات بقواعد محلية (بدون Groq)" : ""}
-            {storeMode() === "local" ? " • الحفظ على الجهاز" : ""}
+        {activeCategory && subcategoriesOf(activeCategory).length > 1 && (
+          <div className="pointer-events-auto flex gap-1.5 overflow-x-auto scrollbar-none">
+            {[undefined, ...subcategoriesOf(activeCategory)].map((sub) => {
+              const current = plan?.stops.length === 1 ? plan.stops[0].step : undefined;
+              const on = current?.category === activeCategory && current.subcategory === sub;
+              return (
+                <button
+                  key={sub ?? "all"}
+                  onClick={() => browse(activeCategory, sub)}
+                  disabled={busy}
+                  className={`shrink-0 rounded-full border px-3 py-1 text-xs shadow-sm ${on ? "border-brand-500 bg-brand-50 font-semibold text-brand-700" : "border-line bg-surface"}`}
+                >
+                  {sub ? SUBCATEGORY_META[sub].label : "الكل"}
+                </button>
+              );
+            })}
           </div>
         )}
+        {config && <SourceBanner config={config} store={store} />}
       </div>
 
       {/* Locate me */}
@@ -338,17 +429,17 @@ export default function HudhudApp() {
             () => say({ role: "assistant", text: "ما قدرت أوصل لموقعك، بستخدم وسط الرياض." }),
           )
         }
-        className="absolute bottom-[calc(45dvh+12px)] left-3 z-[1000] flex size-11 items-center justify-center rounded-full bg-surface text-lg shadow-lg md:bottom-6"
+        className="absolute bottom-[calc(45dvh+12px)] left-3 z-[1000] flex size-11 items-center justify-center rounded-full bg-surface shadow-lg md:bottom-6"
         aria-label="موقعي"
       >
-        ◎
+        <LocateFixed className="size-5 text-brand-600" />
       </button>
 
       {/* Selected place card on the map */}
       {focus && (
         <div className="absolute inset-x-3 bottom-[calc(45dvh+12px)] z-[1000] mx-auto max-w-sm md:bottom-6 md:right-[436px] md:left-auto md:w-80">
-          <button onClick={() => setFocus(null)} className="absolute -top-3 left-2 z-10 flex size-7 items-center justify-center rounded-full bg-surface text-sm shadow" aria-label="إغلاق">
-            ✕
+          <button onClick={() => setFocus(null)} className="absolute -top-3 left-2 z-10 flex size-7 items-center justify-center rounded-full bg-surface shadow" aria-label="إغلاق">
+            <X className="size-4" />
           </button>
           <PlaceCard
             place={focus.place}
@@ -357,7 +448,7 @@ export default function HudhudApp() {
             reason={plan?.stops.find((s) => s.place.id === focus.place.id)?.reason}
             badge={focusedIsStop ? `المحطة ${plan!.stops.findIndex((s) => s.place.id === focus.place.id) + 1}` : "بديل"}
             onDetails={() => setDetails(focus.place)}
-            chooseLabel={focusedIsStop ? "🔄 غيّره" : "✓ اختره بداله"}
+            chooseLabel={focusedIsStop ? "غيّره" : "اختره بداله"}
             onChoose={() => (focusedIsStop ? replaceStop(focus.stopIndex) : chooseAlternative(focus.place))}
           />
         </div>
@@ -373,10 +464,12 @@ export default function HudhudApp() {
           <span className="mx-auto h-1.5 w-10 rounded-full bg-line md:hidden" />
         </button>
         <div className="flex items-center justify-between px-4 pb-2 max-md:-mt-2">
-          <h2 className="font-bold">✨ مساعد هدهد الذكي</h2>
+          <h2 className="inline-flex items-center gap-1.5 font-bold">
+            <Sparkles className="size-4 text-brand-600" aria-hidden /> مساعد هدهد الذكي
+          </h2>
           {plan?.startedAt && pendingVisit && (
-            <button onClick={() => setFeedbackOn(true)} className="rounded-full bg-amber-100 px-2 py-1 text-[11px] text-amber-900">
-              ⏩ محاكاة الرجوع بعد الزيارة
+            <button onClick={() => setFeedbackOn(true)} className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[11px] text-amber-900">
+              <FastForward className="size-3" aria-hidden /> محاكاة الرجوع بعد الزيارة
             </button>
           )}
         </div>
@@ -384,6 +477,7 @@ export default function HudhudApp() {
           <AssistantChat
             messages={messages}
             busy={busy && busyIndex === null}
+            disabled={busy || busyIndex !== null}
             chosenIds={stopsOnMap.map((p) => p.id)}
             from={plan?.origin ?? userOrigin.loc}
             fromLabel={plan?.originLabel ?? userOrigin.label}
@@ -430,43 +524,89 @@ export default function HudhudApp() {
 
       {feedbackOn && pendingVisit && <FeedbackFlow key={pendingVisit.placeId} visit={pendingVisit} prefs={prefs} onFinish={finishVisit} onPrefs={updatePrefs} />}
 
-      {prefsOpen && <PrefsSheet prefs={prefs} onChange={updatePrefs} onClose={() => setPrefsOpen(false)} />}
+      {prefsOpen && <PrefsSheet prefs={prefs} store={store} onChange={updatePrefs} onClear={resetPrefs} onClose={() => setPrefsOpen(false)} />}
     </div>
   );
 }
 
-function PrefsSheet({ prefs, onChange, onClose }: { prefs: Preferences; onChange: (p: Preferences) => void; onClose: () => void }) {
+/** Always tells the user which data they are looking at, and when something is down. */
+function SourceBanner({ config, store }: { config: Config; store: StoreStatus | null }) {
+  const pill = "pointer-events-auto inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] shadow";
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {config.places === "supabase" && config.dbError && (
+        <span className={`${pill} bg-red-100 text-red-800`}>
+          <TriangleAlert className="size-3" aria-hidden /> تعذر الاتصال بقاعدة البيانات
+        </span>
+      )}
+      {config.places === "supabase" && !config.dbError && (
+        <span className={`${pill} bg-surface text-muted`}>
+          <Database className="size-3" aria-hidden /> {config.placesCount?.toLocaleString("ar-SA")} مكان تجريبي من قاعدة البيانات
+        </span>
+      )}
+      {config.places === "demo" && (
+        <span className={`${pill} bg-amber-100 text-amber-900`}>
+          <FlaskConical className="size-3" aria-hidden /> بيانات محلية تجريبية (قاعدة البيانات غير مهيأة)
+        </span>
+      )}
+      {config.ai === "rules" && (
+        <span className={`${pill} bg-surface text-muted`}>
+          <Brain className="size-3" aria-hidden /> فهم الطلبات بقواعد محلية (بدون Groq)
+        </span>
+      )}
+      {store?.mode === "local" && (
+        <span className={`${pill} bg-amber-100 text-amber-900`} title={store.reason}>
+          <FlaskConical className="size-3" aria-hidden /> التقييمات والتفضيلات محفوظة على الجهاز
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PrefList({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className="text-muted">{title}</p>
+      <p>{items.join("، ")}</p>
+    </div>
+  );
+}
+
+function PrefsSheet({ prefs, store, onChange, onClear, onClose }: { prefs: Preferences; store: StoreStatus | null; onChange: (p: Preferences) => void; onClear: () => void; onClose: () => void }) {
+  const sub = (l: Subcategory[]) => l.map((s) => SUBCATEGORY_META[s].label);
+  const empty = !prefs.likes.length && !prefs.cuisines.length && !prefs.cafeTypes.length && !prefs.neighborhoods.length && !prefs.avoid.length && !prefs.notes.length && !prefs.minRating && !prefs.budget && !prefs.distance;
   return (
     <div className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/40 md:items-center" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="w-full space-y-3 rounded-t-3xl bg-surface p-5 md:max-w-md md:rounded-3xl">
-        <h2 className="text-lg font-bold">🧠 تفضيلاتي</h2>
+        <h2 className="inline-flex items-center gap-2 text-lg font-bold">
+          <Brain className="size-5 text-brand-600" aria-hidden /> تفضيلاتي
+        </h2>
         <label className="flex items-center justify-between gap-3 rounded-xl bg-background p-3 text-sm">
           <span>أسمح للمساعد يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
           <input type="checkbox" checked={prefs.consent} onChange={(e) => onChange({ ...prefs, consent: e.target.checked })} className="size-5 accent-brand-500" />
         </label>
-        <div className="space-y-1 text-sm">
-          <p className="text-muted">أفضّل:</p>
-          <p>{prefs.likes.length ? prefs.likes.map((t) => TAG_LABELS[t]).join("، ") : "لا شيء محفوظ بعد"}</p>
-          {prefs.avoid.length > 0 && (
-            <>
-              <p className="pt-1 text-muted">أتجنب:</p>
-              <p>{prefs.avoid.join("، ")}</p>
-            </>
-          )}
-          {prefs.minRating && <p className="pt-1">أقل تقييم مفضّل: {prefs.minRating}</p>}
-          {prefs.notes.length > 0 && (
-            <>
-              <p className="pt-1 text-muted">ملاحظاتي:</p>
-              <ul className="list-inside list-disc">{prefs.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
-            </>
-          )}
+        <div className="space-y-2 text-sm">
+          {empty && <p className="text-muted">لا شيء محفوظ بعد.</p>}
+          <PrefList title="أفضّل:" items={prefs.likes.map((t) => TAG_LABELS[t])} />
+          <PrefList title="المطابخ المفضلة:" items={sub(prefs.cuisines)} />
+          <PrefList title="نوع الكوفي المفضل:" items={sub(prefs.cafeTypes)} />
+          <PrefList title="الأحياء المفضلة:" items={prefs.neighborhoods} />
+          <PrefList title="الميزانية:" items={prefs.budget === "low" ? ["اقتصادي"] : []} />
+          <PrefList title="الترتيب المفضل:" items={prefs.distance === "distance" ? ["الأقرب"] : prefs.distance === "rating" ? ["الأعلى تقييماً"] : []} />
+          <PrefList title="أتجنب:" items={prefs.avoid} />
+          <PrefList title="أقل تقييم مفضّل:" items={prefs.minRating ? [String(prefs.minRating)] : []} />
+          <PrefList title="ملاحظاتي:" items={prefs.notes} />
         </div>
+        <p className="text-[11px] text-muted">
+          {store?.mode === "supabase" ? "محفوظة في حسابك المجهول على قاعدة البيانات، ومحمية بحيث ما يشوفها غيرك." : "محفوظة على هذا الجهاز فقط (وضع تجريبي)."}
+        </p>
         <div className="flex gap-2">
-          <button onClick={() => onChange({ ...DEFAULT_PREFS, consent: prefs.consent })} className="flex-1 rounded-xl border border-red-200 py-2 text-sm text-red-600">
+          <button onClick={onClear} className="flex-1 rounded-xl border border-red-200 py-2 text-sm text-red-600">
             امسح تفضيلاتي
           </button>
-          <button onClick={onClose} className="flex-1 rounded-xl bg-brand-500 py-2 text-sm text-white">
-            تم
+          <button onClick={onClose} className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-brand-500 py-2 text-sm text-white">
+            <Check className="size-4" aria-hidden /> تم
           </button>
         </div>
       </div>

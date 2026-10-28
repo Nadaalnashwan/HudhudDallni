@@ -1,11 +1,55 @@
 import "server-only";
-import { CATEGORY_META } from "../catalog";
-import { DEMO_GOOGLE_REVIEWS, DEMO_PLACES } from "../demoPlaces";
+import { CATEGORY_META, SUBCATEGORY_META } from "../catalog";
+import { DEMO_PLACES } from "../demoPlaces";
 import { haversineKm } from "../geo";
-import type { Category, LatLng, Place, PlaceTag } from "../types";
+import { supabaseConfigured } from "../supabase";
+import type { Category, LatLng, Place, PlaceTag, Subcategory } from "../types";
+import { getPlaceById, queryPlaces } from "./supabasePlaces";
+
+export { PlacesUnavailableError } from "./supabasePlaces";
 
 const KEY = process.env.GOOGLE_MAPS_API_KEY;
-export const placesMode = (): "google" | "demo" => (KEY ? "google" : "demo");
+
+/**
+ * Exactly one place source is active — sources are never mixed:
+ * Supabase (hudhud_demo) → Google Places → local offline demo.
+ */
+export const placesMode = (): Place["source"] => (supabaseConfigured() ? "supabase" : KEY ? "google" : "demo");
+
+export type SearchOpts = {
+  category: Category;
+  subcategory?: Subcategory;
+  neighborhood?: string;
+  query?: string; // a place name the user mentioned
+  near: LatLng;
+  radiusKm?: number;
+};
+
+/** Candidates for one step. Returns the full filtered set; the planner ranks by distance. */
+export async function searchPlaces(opts: SearchOpts): Promise<Place[]> {
+  const mode = placesMode();
+  if (mode === "supabase") {
+    const rows = await queryPlaces(opts);
+    const named = opts.query ? rows.filter((p) => p.name.includes(opts.query!)) : [];
+    return named.length ? named : rows;
+  }
+  if (mode === "google") return googleSearch(opts);
+
+  let pool = DEMO_PLACES.filter((p) => p.category === opts.category && (!opts.subcategory || p.subcategory === opts.subcategory));
+  if (opts.neighborhood) pool = pool.filter((p) => p.district === opts.neighborhood);
+  const q = opts.query?.replace(/\(تجريبي\)/g, "").trim();
+  const named = q ? pool.filter((p) => p.name.includes(q)) : [];
+  return named.length ? named : pool;
+}
+
+export async function getPlace(id: string, category: Category): Promise<Place | null> {
+  if (id.startsWith("demo-")) return DEMO_PLACES.find((p) => p.id === id) ?? null;
+  if (placesMode() === "supabase") return getPlaceById(id);
+  if (KEY) return googleDetails(id, category);
+  return null;
+}
+
+// ---------------------------------------------------------------- Google Places (optional)
 
 const FIELDS = [
   "places.id",
@@ -42,11 +86,10 @@ type GooglePlace = {
   goodForChildren?: boolean;
   editorialSummary?: { text: string };
   currentOpeningHours?: { openNow?: boolean };
-  reviews?: { authorAttribution?: { displayName?: string }; rating?: number; text?: { text?: string } }[];
 };
 
 /** Only derive tags from fields Google actually returns — never guess "quiet". */
-function tagsFrom(p: GooglePlace): PlaceTag[] {
+function googleTags(p: GooglePlace): PlaceTag[] {
   const tags: PlaceTag[] = [];
   const summary = p.editorialSummary?.text ?? "";
   if (/هادئ|هادي|quiet|calm|cozy/i.test(summary)) tags.push("quiet");
@@ -56,80 +99,53 @@ function tagsFrom(p: GooglePlace): PlaceTag[] {
   return tags;
 }
 
-function fromGoogle(p: GooglePlace, category: Category): Place {
+function fromGoogle(p: GooglePlace, category: Category, subcategory?: Subcategory): Place {
   return {
     id: p.id,
     name: p.displayName?.text ?? "مكان",
     category,
+    subcategory,
     location: { lat: p.location.latitude, lng: p.location.longitude },
     address: p.formattedAddress ?? "",
     rating: p.rating,
     ratingCount: p.userRatingCount,
     priceLevel: p.priceLevel ? PRICE[p.priceLevel] : undefined,
     photoUrl: p.photos?.[0] ? `/api/photo?name=${encodeURIComponent(p.photos[0].name)}` : undefined,
-    tags: tagsFrom(p),
+    tags: googleTags(p),
     summary: p.editorialSummary?.text,
     openNow: p.currentOpeningHours?.openNow,
     source: "google",
+    isDemo: false,
   };
 }
 
-export async function searchPlaces(opts: {
-  category: Category;
-  query?: string;
-  near: LatLng;
-  radiusKm?: number;
-}): Promise<Place[]> {
-  const radiusKm = opts.radiusKm ?? 4;
-  if (!KEY) {
-    const pool = DEMO_PLACES.filter((p) => p.category === opts.category);
-    const q = opts.query?.replace(/\(تجريبي\)/g, "").trim();
-    const named = q ? pool.filter((p) => p.name.includes(q)) : [];
-    if (named.length) return named;
-    const inRange = pool.filter((p) => haversineKm(p.location, opts.near) <= radiusKm);
-    // Widen automatically so demo never returns empty.
-    return inRange.length >= 3 ? inRange : pool.sort((a, b) => haversineKm(a.location, opts.near) - haversineKm(b.location, opts.near)).slice(0, 8);
-  }
-
+async function googleSearch(opts: SearchOpts): Promise<Place[]> {
   const meta = CATEGORY_META[opts.category];
+  const sub = opts.subcategory ? SUBCATEGORY_META[opts.subcategory].label : "";
+  const radiusKm = opts.radiusKm ?? 6;
   const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": KEY, "X-Goog-FieldMask": FIELDS },
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": KEY!, "X-Goog-FieldMask": FIELDS },
     body: JSON.stringify({
-      textQuery: `${opts.query || meta.query} في الرياض`,
+      textQuery: `${opts.query || `${meta.query} ${sub}`.trim()} ${opts.neighborhood ? `حي ${opts.neighborhood}` : ""} الرياض`,
       languageCode: "ar",
       regionCode: "SA",
-      pageSize: 15,
-      locationBias: {
-        circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: Math.min(radiusKm * 1000, 50000) },
-      },
+      pageSize: 20,
+      locationBias: { circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: Math.min(radiusKm * 1000, 50000) } },
     }),
     next: { revalidate: 3600 },
   });
   if (!res.ok) throw new Error(`Places API ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as { places?: GooglePlace[] };
-  return (data.places ?? []).map((p) => fromGoogle(p, opts.category));
+  return (data.places ?? [])
+    .map((p) => fromGoogle(p, opts.category, opts.subcategory))
+    .sort((a, b) => haversineKm(a.location, opts.near) - haversineKm(b.location, opts.near));
 }
 
-export type PlaceDetails = { place: Place; googleReviews: { author: string; rating: number; text: string }[] };
-
-export async function getPlaceDetails(id: string, category: Category): Promise<PlaceDetails | null> {
-  if (!KEY || id.startsWith("demo-")) {
-    const place = DEMO_PLACES.find((p) => p.id === id);
-    return place ? { place, googleReviews: DEMO_GOOGLE_REVIEWS } : null;
-  }
-  const mask = FIELDS.replaceAll("places.", "") + ",reviews";
+async function googleDetails(id: string, category: Category): Promise<Place | null> {
+  const mask = FIELDS.replaceAll("places.", "");
   const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}?languageCode=ar`, {
-    headers: { "X-Goog-Api-Key": KEY, "X-Goog-FieldMask": mask },
+    headers: { "X-Goog-Api-Key": KEY!, "X-Goog-FieldMask": mask },
   });
-  if (!res.ok) return null;
-  const p = (await res.json()) as GooglePlace;
-  return {
-    place: fromGoogle(p, category),
-    googleReviews: (p.reviews ?? []).map((r) => ({
-      author: r.authorAttribution?.displayName ?? "مستخدم Google",
-      rating: r.rating ?? 0,
-      text: r.text?.text ?? "",
-    })),
-  };
+  return res.ok ? fromGoogle((await res.json()) as GooglePlace, category) : null;
 }

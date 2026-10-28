@@ -12,12 +12,6 @@ export function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-/** Rough city-driving estimate used in demo mode: road factor 1.35, ~32 km/h average. */
-export function estimateDrive(a: LatLng, b: LatLng) {
-  const km = haversineKm(a, b) * 1.35;
-  return { distanceMeters: Math.round(km * 1000), durationSeconds: Math.round((km / 32) * 3600) + 120 };
-}
-
 export function formatKm(km: number) {
   return km < 1 ? `${Math.round(km * 1000)} م` : `${km.toFixed(1)} كم`;
 }

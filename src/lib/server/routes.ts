@@ -1,26 +1,21 @@
 import "server-only";
-import { decodePolyline, estimateDrive } from "../geo";
+import { decodePolyline, haversineKm } from "../geo";
 import type { LatLng, RouteResult } from "../types";
 
 const KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 const wp = (p: LatLng) => ({ location: { latLng: { latitude: p.lat, longitude: p.lng } } });
 
-function demoRoute(points: LatLng[]): RouteResult {
-  const legs = points.slice(1).map((p, i) => estimateDrive(points[i], p));
-  return {
-    path: points,
-    legs,
-    distanceMeters: legs.reduce((s, l) => s + l.distanceMeters, 0),
-    durationSeconds: legs.reduce((s, l) => s + l.durationSeconds, 0),
-    source: "demo",
-  };
+/** Without Google Routes we only know straight-line (Haversine) distance — no driving time is invented. */
+function straightLine(points: LatLng[]): RouteResult {
+  const legs = points.slice(1).map((p, i) => ({ distanceMeters: Math.round(haversineKm(points[i], p) * 1000) }));
+  return { path: points, legs, distanceMeters: legs.reduce((s, l) => s + l.distanceMeters, 0), source: "straight_line" };
 }
 
-/** Driving route through points in order (origin → stops). Falls back to estimates. */
+/** Driving route through points in order (origin → stops). Falls back to straight lines. */
 export async function computeRoute(points: LatLng[]): Promise<RouteResult> {
-  if (points.length < 2) return demoRoute(points);
-  if (!KEY) return demoRoute(points);
+  if (points.length < 2) return straightLine(points);
+  if (!KEY) return straightLine(points);
   try {
     const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
       method: "POST",
@@ -54,7 +49,7 @@ export async function computeRoute(points: LatLng[]): Promise<RouteResult> {
       source: "google",
     };
   } catch (e) {
-    console.error("Routes API failed, using estimate", e);
-    return demoRoute(points);
+    console.error("Routes API failed, using straight lines", e);
+    return straightLine(points);
   }
 }

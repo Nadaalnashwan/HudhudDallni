@@ -1,43 +1,72 @@
 "use client";
-import { CATEGORY_META, TAG_LABELS } from "@/lib/catalog";
+import { FlaskConical, Star } from "lucide-react";
+import { useState } from "react";
+import { CATEGORY_META, SUBCATEGORY_META, subcategoryImage, TAG_LABELS } from "@/lib/catalog";
 import type { Place } from "@/lib/types";
+import { CategoryIcon } from "./icons";
 
-export function PlacePhoto({ place, className = "" }: { place: Place; className?: string }) {
-  const meta = CATEGORY_META[place.category];
-  if (place.photoUrl)
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={place.photoUrl} alt={place.name} className={`object-cover ${className}`} loading="lazy" />;
+/**
+ * A real photo of the venue when the data has one; otherwise a licensed generic
+ * photo of the place type, captioned as illustrative. Falls back to an icon tile.
+ */
+export function PlacePhoto({ place, className = "", caption = true }: { place: Place; className?: string; caption?: boolean }) {
+  const generic = !place.photoUrl;
+  const sources = [place.photoUrl, subcategoryImage(place.subcategory), subcategoryImage(undefined, place.category)].filter(Boolean) as string[];
+  // failed-source index, reset whenever a different place is shown
+  const [failed, setFailed] = useState({ id: place.id, i: 0 });
+  const i = failed.id === place.id ? failed.i : 0;
+  const color = CATEGORY_META[place.category].color;
+  if (i >= sources.length)
+    return (
+      <div className={`flex items-center justify-center ${className}`} style={{ background: `linear-gradient(135deg, ${color}22, ${color}66)`, color }}>
+        <CategoryIcon category={place.category} className="size-8" />
+      </div>
+    );
+  const genericNow = generic || i > 0;
   return (
-    <div
-      className={`flex items-center justify-center text-3xl ${className}`}
-      style={{ background: `linear-gradient(135deg, ${meta.color}33, ${meta.color}88)` }}
-      aria-label={place.name}
-    >
-      {meta.emoji}
+    <div className={`relative overflow-hidden ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={sources[i]} alt={genericNow ? `صورة توضيحية: ${typeLabel(place)}` : place.name} className="size-full object-cover" loading="lazy" onError={() => setFailed({ id: place.id, i: i + 1 })} />
+      {genericNow && caption && <span className="absolute bottom-1 left-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">صورة توضيحية</span>}
     </div>
   );
 }
+
+export const typeLabel = (p: Pick<Place, "category" | "subcategory">) =>
+  p.subcategory && SUBCATEGORY_META[p.subcategory].label !== CATEGORY_META[p.category].label
+    ? `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`
+    : CATEGORY_META[p.category].label;
 
 export function Stars({ value, size = "text-sm" }: { value?: number; size?: string }) {
   if (!value) return <span className="text-xs text-muted">بدون تقييم</span>;
   return (
     <span className={`inline-flex items-center gap-1 ${size}`}>
-      <span className="text-amber-500">★</span>
+      <Star className="size-[1em] fill-amber-400 text-amber-400" aria-hidden />
       <span className="font-semibold">{value.toFixed(1)}</span>
     </span>
   );
 }
 
 export function TagChips({ place }: { place: Place }) {
-  if (!place.tags.length) return null;
+  const labels = [...new Set([...place.tags.map((t) => TAG_LABELS[t]), ...(place.labels ?? [])])];
+  if (!labels.length) return null;
   return (
     <div className="flex flex-wrap gap-1">
-      {place.tags.map((t) => (
+      {labels.map((t) => (
         <span key={t} className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] text-brand-700">
-          {TAG_LABELS[t]}
+          {t}
         </span>
       ))}
     </div>
+  );
+}
+
+export function DemoBadge({ place }: { place: Place }) {
+  if (!place.isDemo) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+      <FlaskConical className="size-3" aria-hidden /> مكان تجريبي
+    </span>
   );
 }
 

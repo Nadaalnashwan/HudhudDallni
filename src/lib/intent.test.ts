@@ -93,3 +93,75 @@ describe("parseWithRules: editing a plan", () => {
     });
   });
 });
+
+describe("parseWithRules: whole-plan vs all places vs one stop", () => {
+  const regenerate = ["غيرلي الخطة", "ما عجبتني الخطة", "ابي شي ثاني", "عطني اقتراح غير", "لا مو كذا، سو لي خطة ثانية", "ودي بشي مختلف", "خلنا نبدأ من جديد", "I want something totally different"];
+  const allPlaces = ["غيرلي الأماكن", "مو عاجبني ولا مكان", "طفشت من هالأماكن", "بدلها كلها", "ما عجبني شيء", "show me different places"];
+
+  it.each(regenerate)("«%s» asks for a different itinerary", (msg) => {
+    expect(parseWithRules(msg, outing).action).toEqual({ type: "regenerate" });
+  });
+
+  it.each(allPlaces)("«%s» replaces every place, keeping the activities", (msg) => {
+    expect(parseWithRules(msg, outing).action).toEqual({ type: "replace_all" });
+  });
+
+  it.each([
+    ["غير الكوفي", { op: "replace", index: 1 }],
+    ["بدل المطعم", { op: "replace", index: 2 }],
+    ["خل النادي أقرب", { op: "replace", index: 0, nearer: true }],
+    ["ابي مطعم إيطالي بدل البرجر", { op: "replace", index: 2, step: { subcategory: "italian" } }],
+  ])("«%s» changes one stop only", (msg, expected) => {
+    expect(parseWithRules(msg, outing).action).toMatchObject({ type: "modify", ...expected });
+  });
+
+  it("changes even locked stops only when the user says so", () => {
+    expect(parseWithRules("غير كل شيء حتى النادي المثبت", outing).action).toEqual({ type: "replace_all", includeLocked: true });
+  });
+
+  it("keeps a locked gym when another stop changes", () => {
+    expect(parseWithRules("ثبت النادي", outing).action).toEqual({ type: "modify", op: "lock", index: 0 });
+    const locked: IntentContext = { planSteps: outing.planSteps.map((s, i) => ({ ...s, locked: i === 0 })) };
+    expect(parseWithRules("غير المطعم", locked).action).toEqual({ type: "modify", op: "replace", index: 2, onlyThis: false });
+  });
+
+  it("needs a plan before changing one", () => {
+    for (const msg of [...regenerate, ...allPlaces]) expect(parseWithRules(msg, empty).action.type).not.toMatch(/regenerate|replace_all|modify|constraints/);
+  });
+});
+
+describe("parseWithRules: corrections, undo and unclear requests", () => {
+  it.each([
+    ["لا أبيه أقرب", { nearer: true }],
+    ["غالي عطني أرخص", { addTags: ["budget"] }],
+    ["أبي مكان أهدأ", { addTags: ["quiet"] }],
+    ["أبي أماكن تناسب البنات", { women: true, addTags: ["family"] }],
+    ["خليها في حي الملقا", { district: "الملقا" }],
+  ])("«%s» edits the plan's constraints", (msg, edit) => {
+    expect(parseWithRules(msg, outing).action).toEqual({ type: "constraints", edit });
+  });
+
+  it("asks which district for a region it cannot map", () => {
+    const res = parseWithRules("خليها شمال الرياض", outing);
+    expect(res.action.type).toBe("clarify");
+    if (res.action.type !== "clarify") return;
+    expect(res.action.options.length).toBeGreaterThan(0);
+    for (const o of res.action.options) expect(parseWithRules(o.value, outing).action).toMatchObject({ type: "constraints", edit: { district: o.label } });
+  });
+
+  it("asks instead of guessing when the change is unclear", () => {
+    const res = parseWithRules("مو هذي الفكرة اللي ببالي", outing);
+    expect(res.action.type).toBe("clarify");
+    if (res.action.type !== "clarify") return;
+    // every option is itself a request the rules understand
+    expect(parseWithRules(res.action.options[0].value, outing).action.type).toBe("replace_all");
+    expect(parseWithRules(res.action.options[1].value, outing).action.type).toBe("regenerate");
+    expect(parseWithRules(res.action.options[2].value, outing).action).toMatchObject({ type: "modify", op: "replace", index: 0 });
+  });
+
+  it("undoes only when there is something to undo", () => {
+    expect(parseWithRules("رجع الخطة اللي قبل", { ...outing, canUndo: true }).action).toEqual({ type: "undo" });
+    expect(parseWithRules("تراجع", { ...outing, canUndo: true }).action).toEqual({ type: "undo" });
+    expect(parseWithRules("رجع الخطة اللي قبل", outing).action.type).toBe("chat");
+  });
+});

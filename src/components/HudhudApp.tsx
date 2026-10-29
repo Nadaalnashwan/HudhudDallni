@@ -4,8 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
 import { formatKm, formatLeg, RIYADH_CENTER } from "@/lib/geo";
+import type { IntentContext } from "@/lib/intent";
+import {
+  constraintsInput,
+  describeConstraintChange,
+  describeNewItinerary,
+  describeSameShapeChange,
+  HISTORY_LIMIT,
+  regenerateInput,
+  replaceAllInput,
+  replaceStopInput,
+  samePlaces,
+  settingsOf,
+  type PlanSettings,
+  type StepInput,
+} from "@/lib/planEdits";
 import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, markAssistantFeedbackAsked, savePlan, savePreferences, saveVisits, shouldAskForAssistantFeedback, storeStatus, type StoreStatus } from "@/lib/store";
-import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
+import type { AssistantResponse, Category, ChatMessage, ConstraintEdit, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
 import AssistantFeedbackSheet, { AssistantStatsSheet } from "./AssistantFeedback";
 import { MishwarakLogo, MishwarakMark } from "./Brand";
@@ -27,6 +42,9 @@ const WELCOME: ChatMessage = {
   text: "هلا والله! أنا مشوارك، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
 const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
+const UNDO_VALUE = "تراجع";
+const UNDO_OPTIONS = [{ label: "تراجع", value: UNDO_VALUE }];
+const CHAT_CONTEXT_TURNS = 8;
 
 type Config = { places: Place["source"]; placesCount?: number; dbError?: string; ai: "gemini" | "rules"; aiModel?: string };
 type RebuildOpts = { place?: Place; exclude?: boolean; step?: Partial<StepSpec>; nearer?: boolean; onlyThis?: boolean };
@@ -42,6 +60,11 @@ type BuildArgs = {
   locked?: boolean[];
   excluded?: string[][];
   nearest?: boolean[];
+  fallback?: StepInput["fallback"];
+  avoid?: string[];
+  avoidNames?: string[];
+  seen?: string[];
+  goal?: string; // kept on the plan, never sent to the planner
 };
 
 export default function HudhudApp() {
@@ -65,6 +88,11 @@ export default function HudhudApp() {
   const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
   const [feedbackAsk, setFeedbackAsk] = useState<{ planId?: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
+  // Plans before each change (newest last), so "تراجع" can restore the map, cards and route together.
+  const [undoStack, setUndoStack] = useState<Plan[]>([]);
+  const rejected = useRef(new Set<string>()); // places the user turned down this session
+  const shown = useRef(new Set<string>()); // every place a plan showed this session
+  const pendingGoal = useRef<string | null>(null); // the request a clarifying question is about
   const tripApi = useTrip();
   const trip = tripApi.trip;
 
@@ -105,12 +133,19 @@ export default function HudhudApp() {
   // --- planning
   /** Calls the planner; surfaces database failures instead of silently swapping data sources. */
   const runPlan = async (a: BuildArgs, keepId?: string): Promise<Plan | null> => {
+    const { goal, ...build } = a;
     let res: Response;
     try {
       res = await fetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...a, origin: a.origin.loc, originLabel: a.origin.label, preferences: prefs }),
+        body: JSON.stringify({
+          ...build,
+          origin: a.origin.loc,
+          originLabel: a.origin.label,
+          avoid: [...new Set([...(a.avoid ?? []), ...rejected.current])],
+          preferences: prefs,
+        }),
       });
     } catch {
       say({ role: "assistant", text: "صار خطأ بالاتصال، جرب مرة ثانية." });
@@ -132,7 +167,9 @@ export default function HudhudApp() {
       say({ role: "assistant", text: "ما لقيت أماكن مطابقة لطلبك في البيانات. جرب نوع أو حي ثاني." });
       return null;
     }
-    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, district: a.district, priority: a.priority, stops, route };
+    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, district: a.district, priority: a.priority, stops, route, tags: a.tags, goal };
+    if (plan && !samePlaces(plan, next)) setUndoStack((h) => [...h, plan].slice(-HISTORY_LIMIT));
+    stops.forEach((s) => shown.current.add(s.place.id));
     setPlan(next);
     setFocus(null);
     savePlan(next);
@@ -145,7 +182,8 @@ export default function HudhudApp() {
     origin: { loc: p.origin, label: p.originLabel },
     district: p.district,
     priority: p.priority,
-    tags,
+    tags: p.tags ?? tags,
+    goal: p.goal,
   });
 
   const prefsNote = () => {
@@ -176,27 +214,19 @@ export default function HudhudApp() {
       const swapped = before.stops[i] && before.stops[i].step.category !== s.step.category;
       parts.push(i === changedAt ? (swapped ? `حطيت ${typeLabel(s.step)} بدال ${"ال" + CATEGORY_META[before.stops[i].step.category].label}: ${s.place.name}` : `غيّرت ${label} إلى ${s.place.name}`) : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
     });
-    say({ role: "assistant", text: parts.length ? parts.join("\n") : "حدّثت الخطة." });
+    const target = after.stops[changedAt];
+    if (target && before.stops[changedAt]?.place.id === target.place.id)
+      parts.unshift(`ما لقيت بديل مناسب لل${CATEGORY_META[target.step.category].label}، فخليته ${target.place.name}.`);
+    say({ role: "assistant", text: parts.length ? parts.join("\n") : "ما لقيت بديل مناسب، فخليت الخطة مثل ما هي." });
   };
 
   /** Rebuild from index i: earlier stops and locked later stops stay; the rest re-anchor on the new chain. */
   const rebuildFrom = async (i: number, o: RebuildOpts) => {
     if (!plan || busyIndex !== null) return; // one plan update at a time
     setBusyIndex(i);
-    // "بس" keeps everything after the changed stop; otherwise only locked stops survive.
-    const keep = plan.stops.map((s, j) => (j < i ? s.place : j === i ? o.place ?? null : s.locked || o.onlyThis ? s.place : null));
-    const excluded = plan.stops.map((s, j) => (j === i && o.exclude ? [...s.excluded, s.place.id] : s.excluded));
-    const steps = plan.stops.map((s, j) => (j === i && o.step ? { ...s.step, ...o.step } : s.step));
-    const next = await runPlan(
-      {
-        ...argsFrom(plan, steps),
-        keep,
-        excluded,
-        locked: plan.stops.map((s, j) => (j === i ? false : s.locked)),
-        nearest: plan.stops.map((_, j) => j === i && Boolean(o.nearer)),
-      },
-      plan.id,
-    );
+    if (o.exclude) rejected.current.add(plan.stops[i].place.id);
+    const input = replaceStopInput(plan, i, o);
+    const next = await runPlan({ ...argsFrom(plan, input.steps), ...input }, plan.id);
     setBusyIndex(null);
     if (!next) return;
     // One-stop result picked from its cards: the selection moves in place, with no repeat of the cards.
@@ -267,6 +297,79 @@ export default function HudhudApp() {
     }
   };
 
+  const noPlan = () => say({ role: "assistant", text: "ما عندك خطة للحين. قول لي وش ودك تسوي وأرتبها لك." });
+
+  /**
+   * Whole-plan edits. The reply is written from the planner's actual result, never from the
+   * model's claim; "تراجع" is offered only when something really changed.
+   */
+  const runWholeEdit = async (
+    input: StepInput & { settings?: PlanSettings },
+    describe: (before: Plan, after: Plan) => { changed: boolean; text: string },
+    rejectOld: boolean,
+  ) => {
+    if (!plan) return noPlan();
+    const before = plan;
+    const { settings = settingsOf(before), ...stepInput } = input;
+    setBusy(true);
+    const next = await runPlan(
+      { ...stepInput, origin: { loc: settings.origin, label: settings.originLabel }, district: settings.district, priority: settings.priority, tags: settings.tags, goal: before.goal },
+      before.id,
+    );
+    setBusy(false);
+    if (!next) return; // runPlan already said why
+    setTags(settings.tags);
+    const d = describe(before, next);
+    if (d.changed && rejectOld) before.stops.forEach((s) => !next.stops.some((n) => n.place.id === s.place.id) && rejected.current.add(s.place.id));
+    say({ role: "assistant", text: d.text, options: d.changed ? UNDO_OPTIONS : undefined });
+  };
+
+  const replaceAll = (includeLocked?: boolean) => {
+    if (!plan) return noPlan();
+    return runWholeEdit(
+      replaceAllInput(plan, { includeLocked, rejected: [...rejected.current], seen: [...shown.current] }),
+      (b, a) => describeSameShapeChange(b, a, { headline: "غيّرت لك الأماكن:", unchanged: "ما لقيت أماكن بديلة غير اللي بالخطة، فخليتها مثل ما هي.", includeLocked }),
+      true,
+    );
+  };
+
+  const regenerate = (request?: ParsedRequest, includeLocked?: boolean) => {
+    if (!plan) return noPlan();
+    return runWholeEdit(regenerateInput(plan, request, { includeLocked, rejected: [...rejected.current], seen: [...shown.current] }), describeNewItinerary, true);
+  };
+
+  const editConstraints = (edit: ConstraintEdit) => {
+    if (!plan) return noPlan();
+    return runWholeEdit(constraintsInput(plan, edit, { rejected: [...rejected.current] }), (b, a) => describeConstraintChange(b, a, edit), false);
+  };
+
+  const undo = () => {
+    const prev = undoStack[undoStack.length - 1];
+    if (!prev) return say({ role: "assistant", text: "ما فيه تغيير سابق أرجع له." });
+    setUndoStack((h) => h.slice(0, -1));
+    setPlan(prev);
+    savePlan(prev);
+    setFocus(null);
+    setTags(prev.tags ?? []);
+    planMoved.current = true;
+    say({ role: "assistant", text: `رجّعت الخطة اللي قبل:\n${prev.stops.map((s, i) => `${i + 1}. ${typeLabel(s.step)}: ${s.place.name}`).join("\n")}` });
+  };
+
+  /** What Mishwarak needs to read a message in context. */
+  const intentContext = (): IntentContext => ({
+    planSteps:
+      plan?.stops.map((s) => ({ category: s.step.category, subcategory: s.step.subcategory, locked: s.locked, name: s.place.name, placeId: s.place.id, distanceKm: s.distanceFromPrevKm })) ?? [],
+    pending,
+    plan: plan ? { district: plan.district, priority: plan.priority, tags: plan.tags ?? tags } : undefined,
+    goal: plan?.goal ?? pendingGoal.current ?? undefined,
+    history: messages
+      .filter((m) => m.id !== WELCOME.id)
+      .slice(-CHAT_CONTEXT_TURNS)
+      .map((m) => ({ role: m.role, text: m.text.slice(0, 280) })),
+    rejectedIds: [...rejected.current].slice(-50),
+    canUndo: undoStack.length > 0,
+  });
+
   /** Stable tastes Gemini heard in chat are saved only if the user allowed learning. */
   const applyLearned = (u: AssistantResponse["learned"]) => {
     if (!u) return;
@@ -300,6 +403,7 @@ export default function HudhudApp() {
       district: keepArea?.district,
       priority: defaultPriority(plan?.priority),
       tags: [],
+      goal: subcategory ? `${CATEGORY_META[category].label} ${SUBCATEGORY_META[subcategory].label}` : CATEGORY_META[category].label,
     });
     setBusy(false);
     if (p) describeNew(p);
@@ -308,16 +412,14 @@ export default function HudhudApp() {
   // --- chat
   const send = async (text: string) => {
     say({ role: "user", text });
+    // The "تراجع" button works without a model round-trip.
+    if (text === UNDO_VALUE && undoStack.length) return undo();
     setBusy(true);
     try {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          context: { planSteps: plan?.stops.map((s) => ({ category: s.step.category, subcategory: s.step.subcategory, locked: s.locked })) ?? [], pending },
-          preferences: prefs,
-        }),
+        body: JSON.stringify({ message: text, context: intentContext(), preferences: prefs }),
       });
       const out = (await res.json()) as AssistantResponse;
       const a = out.action;
@@ -327,10 +429,14 @@ export default function HudhudApp() {
       }
       applyLearned(out.learned);
       if (a.type === "clarify") {
-        setPending(a.pending);
+        const p = a.pending;
+        setPending(p && (p.steps?.length || p.district || p.priority || p.tags?.length) ? p : undefined);
+        if (!plan) pendingGoal.current = pendingGoal.current ? `${pendingGoal.current} — ${text}` : text;
         say({ role: "assistant", text: a.question || out.reply, options: a.options });
       } else if (a.type === "plan") {
         setPending(undefined);
+        const goal = pendingGoal.current ? `${pendingGoal.current} — ${text}` : text;
+        pendingGoal.current = null;
         say({ role: "assistant", text: out.reply });
         const req = a.request;
         setTags(req.tags);
@@ -339,16 +445,28 @@ export default function HudhudApp() {
         const steps = req.steps.map((s) => ({ ...s, tags: [...new Set([...(s.tags ?? []), ...req.tags])] }));
         setActiveCategory(steps.length === 1 ? steps[0].category : null);
         setBusy(true);
-        const p = await runPlan({ steps, origin, district, priority: defaultPriority(req.priority), tags: req.tags });
+        const p = await runPlan({ steps, origin, district, priority: defaultPriority(req.priority), tags: req.tags, goal });
         if (p) describeNew(p);
       } else if (a.type === "modify") {
-        say({ role: "assistant", text: out.reply });
-        if (a.op === "replace") await replaceStop(a.index, { step: a.step, nearer: a.nearer, onlyThis: a.onlyThis });
-        else if (a.op === "lock") toggleLock(a.index, true);
-        else if (a.op === "unlock") toggleLock(a.index, false);
+        // Edits report what the planner actually did, not what the model said it would do.
+        if (!plan) noPlan();
+        else if (a.op === "replace") await replaceStop(a.index, { step: a.step, nearer: a.nearer, onlyThis: a.onlyThis });
+        else if (a.op === "lock" || a.op === "unlock") {
+          const s = plan.stops[a.index];
+          toggleLock(a.index, a.op === "lock");
+          say({ role: "assistant", text: a.op === "lock" ? `ثبّت ${typeLabel(s.step)}: ${s.place.name}، ما راح يتغير.` : `فكّيت تثبيت ${typeLabel(s.step)}.` });
+        } else if (plan.stops.length < 2) say({ role: "assistant", text: "هذي الوجهة الوحيدة بالخطة. قول لي وش تبي بدالها." });
         else await removeStop(a.index);
       } else if (a.type === "add") {
         await addStep(a.step, undefined, a.after);
+      } else if (a.type === "replace_all") {
+        await replaceAll(a.includeLocked);
+      } else if (a.type === "regenerate") {
+        await regenerate(a.request, a.includeLocked);
+      } else if (a.type === "constraints") {
+        await editConstraints(a.edit);
+      } else if (a.type === "undo") {
+        undo();
       } else {
         say({ role: "assistant", text: out.reply });
       }

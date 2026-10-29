@@ -2,7 +2,7 @@ import "server-only";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { formatKm, haversineKm } from "../geo";
 import type { LatLng, Place, PlaceTag, PlanStop, Preferences, Priority, StepSpec } from "../types";
-import { searchPlaces } from "./places";
+import { placesMode, searchPlaces } from "./places";
 
 export type BuildInput = {
   steps: StepSpec[];
@@ -80,6 +80,12 @@ function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number
 export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
   const stops: PlanStop[] = [];
   const used = new Set<string>();
+  const district = input.district && DISTRICTS[input.district] ? input.district : undefined;
+  // Database and demo searches don't depend on the previous stop, so every step is fetched at once.
+  // (Google Places searches near the previous stop, so it stays sequential.)
+  const search = (step: StepSpec, neighborhood?: string, near?: LatLng) =>
+    searchPlaces({ category: step.category, subcategory: step.subcategory, neighborhood, query: step.placeName, near: near ?? input.origin });
+  const prefetched = placesMode() === "google" ? [] : await Promise.all(input.steps.map((step, i) => search(step, i === 0 ? district : undefined)));
   for (let i = 0; i < input.steps.length; i++) {
     const step = input.steps[i];
     const prev = stops[stops.length - 1]?.place;
@@ -88,15 +94,10 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     const excluded = input.excluded?.[i] ?? [];
     const wanted = wantedTags(step, input);
     const kept = input.keep?.[i];
-    const neighborhood = !prev && input.district && DISTRICTS[input.district] ? input.district : undefined;
+    const neighborhood = !prev ? district : undefined;
 
-    const candidates = await searchPlaces({
-      category: step.category,
-      subcategory: step.subcategory,
-      neighborhood,
-      query: step.placeName,
-      near: anchor,
-    });
+    // a prefetched list is reusable when it was fetched with the same district filter
+    const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(step, neighborhood, anchor);
 
     let eligible = candidates.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id);
     // "قريب من اللي قبله": keep each hop short when the data allows it.

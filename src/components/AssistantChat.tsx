@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ChatMessage, LatLng, Place } from "@/lib/types";
 import { latinDigits } from "@/lib/geo";
 import PlaceCard from "./PlaceCard";
@@ -18,15 +18,27 @@ type Props = {
   onChoose: (p: Place) => void;
   onDetails: (p: Place) => void;
   onSelect: (p: Place) => void;
+  /** The place a one-stop plan settled on: its card gets "ابدأ رحلتك" instead of "اختره". */
+  startId?: string;
+  onStart?: () => void;
   header?: React.ReactNode;
+  /** The current plan card, shown right after message `planAfterId` (or at the end if that message isn't found). */
+  plan?: React.ReactNode;
+  planAfterId?: string | null;
 };
 
-export default function AssistantChat({ messages, busy, disabled = busy, chosenIds, from, fromLabel, onSend, onChoose, onDetails, onSelect, header }: Props) {
+export default function AssistantChat({ messages, busy, disabled = busy, chosenIds, from, fromLabel, onSend, onChoose, onDetails, onSelect, startId, onStart, header, plan, planAfterId }: Props) {
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, busy]);
+  }, [messages, busy, planAfterId]);
+  // a newly picked card slides into view inside its row
+  const cards = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (startId) cards.current?.querySelector(`[data-place="${CSS.escape(startId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [startId]);
+  const planAnchored = Boolean(plan) && messages.some((m) => m.id === planAfterId);
 
   const submit = (t: string) => {
     if (!t.trim() || disabled) return;
@@ -36,51 +48,58 @@ export default function AssistantChat({ messages, busy, disabled = busy, chosenI
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
+      <div ref={cards} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
         {header}
         {messages.map((m, idx) => (
-          <div key={m.id} className={m.role === "user" ? "flex justify-start" : "flex justify-end"}>
-            <div className={`max-w-[92%] space-y-2 ${m.role === "user" ? "" : "w-full"}`}>
-              <div
-                className={`whitespace-pre-line rounded-2xl px-3 py-2 text-sm leading-6 ${
-                  m.role === "user" ? "rounded-br-sm bg-brand-500 text-white" : "rounded-bl-sm bg-background"
-                }`}
-              >
-                {latinDigits(m.text)}
+          <Fragment key={m.id}>
+            <div className={m.role === "user" ? "flex justify-start" : "flex justify-end"}>
+              <div className={`max-w-[92%] space-y-2 ${m.role === "user" ? "" : "w-full"}`}>
+                <div
+                  className={`whitespace-pre-line rounded-2xl px-3 py-2 text-sm leading-6 ${
+                    m.role === "user" ? "rounded-br-sm bg-brand-500 text-white" : "rounded-bl-sm bg-background"
+                  }`}
+                >
+                  {latinDigits(m.text)}
+                </div>
+                {m.options && idx === messages.length - 1 && (
+                  <div className="flex flex-wrap gap-2">
+                    {m.options.map((o) => (
+                      <button key={o.label} onClick={() => submit(o.value)} className="rounded-full border border-brand-500 bg-surface px-3 py-1 text-sm text-brand-700 hover:bg-brand-50">
+                        {latinDigits(o.label)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {m.places && (
+                  <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 scrollbar-none">
+                    {m.places.map((p) => {
+                      const chosen = chosenIds.includes(p.id);
+                      const start = p.id === startId;
+                      return (
+                        <div key={p.id} data-place={p.id} className="shrink-0">
+                          <PlaceCard
+                            compact
+                            place={p}
+                            from={from}
+                            fromLabel={fromLabel}
+                            badge={chosen ? "✓ اختيارك" : undefined}
+                            selected={chosen}
+                            onSelect={() => onSelect(p)}
+                            onDetails={() => onDetails(p)}
+                            onChoose={chosen ? undefined : () => onChoose(p)}
+                            onStart={start ? onStart : undefined}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              {m.options && idx === messages.length - 1 && (
-                <div className="flex flex-wrap gap-2">
-                  {m.options.map((o) => (
-                    <button key={o.label} onClick={() => submit(o.value)} className="rounded-full border border-brand-500 bg-surface px-3 py-1 text-sm text-brand-700 hover:bg-brand-50">
-                      {latinDigits(o.label)}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {m.places && (
-                <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 scrollbar-none">
-                  {m.places.map((p) => {
-                    const chosen = chosenIds.includes(p.id);
-                    return (
-                      <PlaceCard
-                        key={p.id}
-                        compact
-                        place={p}
-                        from={from}
-                        fromLabel={fromLabel}
-                        badge={chosen ? "✓ المختار" : undefined}
-                        selected={chosen}
-                        onSelect={() => onSelect(p)}
-                        onDetails={() => onDetails(p)}
-                        onChoose={chosen ? undefined : () => onChoose(p)}
-                      />
-                    );
-                  })}
-                </div>
-              )}
             </div>
-          </div>
+            {planAnchored && m.id === planAfterId && plan}
+          </Fragment>
         ))}
+        {!planAnchored && plan}
         {busy && (
           <div className="flex justify-end">
             <div className="flex items-center gap-2 rounded-2xl bg-background px-3 py-2 text-sm text-muted">

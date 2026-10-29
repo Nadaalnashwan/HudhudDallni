@@ -1,13 +1,16 @@
 import "server-only";
-import { ApiError, GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI, type ThinkingLevel } from "@google/genai";
 
 /**
  * Google Gemini, server-side only. Keys come from GEMINI_API_KEY_1..3 (never
  * NEXT_PUBLIC_, never sent to the browser).
  *
  * Failover policy — for availability, not for quota:
- *  - 5xx / timeout / network error  → short backoff, then try the next key
- *    (max 3 attempts and 20 s in total)
+ *  - no answer after 1.5 s → hedge: the same request goes out on the next key and the first
+ *    answer wins (the model's latency is bursty under load; most replies take ~1.4 s)
+ *  - 5xx / network error → try the next key right away
+ *  - at most 3 attempts and 3.5 s in total; after that callers answer with the rule-based
+ *    parser, so a chat reply never waits on an overloaded model
  *  - invalid / revoked key (400/401/403) → skip that key for the rest of this process
  *  - 429 quota / rate limit → stop immediately and pause Gemini for the retryDelay Google
  *    returns; callers use the rule-based parser meanwhile. Keys share one project quota and
@@ -17,10 +20,12 @@ import { ApiError, GoogleGenAI } from "@google/genai";
 const KEYS = [process.env.GEMINI_API_KEY_1, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(
   (k): k is string => Boolean(k?.trim()),
 );
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+// Flash-Lite answers in ~1–2 s; bigger Flash models often took 10 s+ or returned 503 under load.
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const MAX_ATTEMPTS = 3;
-const TIMEOUT_MS = 12_000; // per attempt
-const BUDGET_MS = 20_000; // total across retries — a chat reply must not hang
+const HEDGE_MS = 1_500; // start a parallel attempt if the current one hasn't answered by then
+// Total wait, enforced client-side (the API rejects server deadlines under 10 s).
+const BUDGET_MS = 3_500;
 
 const clients = new Map<string, GoogleGenAI>();
 const badKeys = new Set<number>();
@@ -41,11 +46,9 @@ class GeminiUnavailableError extends Error {}
 
 const client = (key: string) => {
   let c = clients.get(key);
-  if (!c) clients.set(key, (c = new GoogleGenAI({ apiKey: key, httpOptions: { timeout: TIMEOUT_MS } })));
+  if (!c) clients.set(key, (c = new GoogleGenAI({ apiKey: key })));
   return c;
 };
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function classify(e: unknown): "quota" | "bad_key" | "transient" | "fatal" {
   if (e instanceof ApiError) {
@@ -59,51 +62,92 @@ function classify(e: unknown): "quota" | "bad_key" | "transient" | "fatal" {
   return "transient";
 }
 
-/** Fast, non-thinking settings for Flash models where the SDK supports them. */
-const thinking = () => (GEMINI_MODEL.includes("2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {});
+/** Least thinking each model family allows: parsing a request doesn't need reasoning, and thinking is most of the latency. */
+const thinking = () => {
+  if (GEMINI_MODEL.includes("2.5-flash")) return { thinkingConfig: { thinkingBudget: 0 } };
+  if (GEMINI_MODEL.startsWith("gemini-3")) return { thinkingConfig: { thinkingLevel: (GEMINI_MODEL.includes("lite") || GEMINI_MODEL.startsWith("gemini-3-flash") ? "minimal" : "low") as ThinkingLevel } };
+  return {};
+};
 
 async function generate(system: string, user: string, opts: { json: boolean; temperature: number }): Promise<string> {
   if (!geminiEnabled()) throw new GeminiUnavailableError("no usable Gemini key");
   if (Date.now() < quotaUntil) throw new GeminiQuotaError(`quota cooldown, ${Math.ceil((quotaUntil - Date.now()) / 1000)}s left`);
-  let attempt = 0;
-  let lastFailure: unknown;
-  const started = Date.now();
-  while (attempt < MAX_ATTEMPTS && Date.now() - started < BUDGET_MS) {
-    // next usable key, starting from the last one that worked
-    let idx = cursor;
-    for (let n = 0; n < KEYS.length && badKeys.has(idx); n++) idx = (idx + 1) % KEYS.length;
-    if (badKeys.has(idx)) break;
-    attempt++;
-    try {
-      const res = await client(KEYS[idx]).models.generateContent({
-        model: GEMINI_MODEL,
-        contents: user,
-        config: {
-          systemInstruction: system,
-          temperature: opts.temperature,
-          ...(opts.json ? { responseMimeType: "application/json" } : {}),
-          ...thinking(),
-        },
-      });
-      cursor = idx;
-      const text = res.text?.trim();
-      if (!text) throw new GeminiUnavailableError("empty response");
-      return text;
-    } catch (e) {
-      lastFailure = e;
-      const kind = classify(e);
-      console.error(`Gemini attempt ${attempt} (key #${idx + 1}) failed — ${kind}: ${(e as Error).message.slice(0, 160)}`);
-      if (kind === "quota") {
-        quotaUntil = Date.now() + retryDelayMs((e as Error).message);
-        throw new GeminiQuotaError((e as Error).message);
+
+  return new Promise<string>((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    let attempts = 0;
+    let running = 0;
+    let done = false;
+    let lastFailure: unknown;
+    let hedge: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (settle: () => void) => {
+      if (done) return;
+      done = true;
+      clearTimeout(hedge);
+      clearTimeout(deadline);
+      controllers.forEach((c) => c.abort());
+      settle();
+    };
+    const deadline = setTimeout(
+      () => finish(() => reject(new GeminiUnavailableError(`no Gemini answer within ${BUDGET_MS} ms (${attempts} attempts)`))),
+      BUDGET_MS,
+    );
+
+    const launch = () => {
+      if (done) return;
+      // next usable key, starting from the last one that worked
+      let idx = cursor;
+      for (let n = 0; n < KEYS.length && badKeys.has(idx); n++) idx = (idx + 1) % KEYS.length;
+      if (badKeys.has(idx) || attempts >= MAX_ATTEMPTS) {
+        if (running === 0) {
+          finish(() => reject(new GeminiUnavailableError(`Gemini unavailable after ${attempts} attempts: ${(lastFailure as Error)?.message ?? "no usable key"}`)));
+        }
+        return;
       }
-      if (kind === "fatal") throw e;
-      if (kind === "bad_key") badKeys.add(idx);
-      if (kind === "transient") await sleep(250 * 2 ** (attempt - 1) + Math.random() * 150);
-      cursor = (idx + 1) % KEYS.length;
-    }
-  }
-  throw new GeminiUnavailableError(`Gemini unavailable after ${attempt} attempts: ${(lastFailure as Error)?.message ?? "no usable key"}`);
+      const attempt = ++attempts;
+      running++;
+      cursor = (idx + 1) % KEYS.length; // a hedge or retry goes to a different key
+      const ctrl = new AbortController();
+      controllers.push(ctrl);
+      clearTimeout(hedge);
+      hedge = setTimeout(launch, HEDGE_MS);
+
+      client(KEYS[idx])
+        .models.generateContent({
+          model: GEMINI_MODEL,
+          contents: user,
+          config: {
+            systemInstruction: system,
+            temperature: opts.temperature,
+            ...(opts.json ? { responseMimeType: "application/json" } : {}),
+            ...thinking(),
+            abortSignal: ctrl.signal,
+          },
+        })
+        .then((res) => {
+          const text = res.text?.trim();
+          if (!text) throw new GeminiUnavailableError("empty response");
+          cursor = idx;
+          finish(() => resolve(text));
+        })
+        .catch((e) => {
+          running--;
+          if (done) return; // aborted because another attempt already answered
+          lastFailure = e;
+          const kind = classify(e);
+          console.error(`Gemini attempt ${attempt} (key #${idx + 1}) failed — ${kind}: ${(e as Error).message.slice(0, 160)}`);
+          if (kind === "quota") {
+            quotaUntil = Date.now() + retryDelayMs((e as Error).message);
+            return finish(() => reject(new GeminiQuotaError((e as Error).message)));
+          }
+          if (kind === "fatal") return finish(() => reject(e));
+          if (kind === "bad_key") badKeys.add(idx);
+          launch(); // failed fast: try the next key now instead of waiting for the hedge
+        });
+    };
+    launch();
+  });
 }
 
 export async function geminiJson<T>(system: string, user: string, temperature = 0.1): Promise<T> {

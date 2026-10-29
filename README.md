@@ -152,13 +152,13 @@ All variables are optional and go in `.env.local`, which git ignores. [`.env.exa
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser and server | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser and server | Supabase publishable key. **Never** use a `service_role` / secret key. |
 | `GEMINI_API_KEY_1` … `_3` | Server | Gemini API keys. Extra keys are used only for failover during outages. |
-| `GEMINI_MODEL` | Server | Gemini model ID (default `gemini-3.5-flash`) |
+| `GEMINI_MODEL` | Server | Gemini model ID (default `gemini-3.1-flash-lite`) |
 | `GOOGLE_MAPS_API_KEY` | Server | Places API (New) and Routes API |
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | Browser | Maps JavaScript API. Restrict it by HTTP referrer. |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Browser | Optional Google Map ID for map styling |
 | `OSRM_URL` | Server | OSRM server (default: the public demo server, `router.project-osrm.org`) |
 
-**Gemini failover policy.** Transient failures (5xx, timeouts, network errors) are retried with the next key, up to three attempts within 20 seconds. Invalid keys are skipped for the rest of the process. A quota error (429) pauses Gemini for the retry delay Google returns, and the rule-based parser takes over. Keys are never rotated to get around a quota.
+**Gemini failover policy.** If a reply hasn't arrived after 1.5 seconds, the same request goes out on the next key and the first answer wins; errors (5xx, network) move to the next key at once. After three attempts or 3.5 seconds the rule-based parser answers, so a reply never waits on an overloaded model. Invalid keys are skipped for the rest of the process. A quota error (429) pauses Gemini for the retry delay Google returns, and the rule-based parser takes over. Keys are never rotated to get around a quota.
 
 ## Deployment
 

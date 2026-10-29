@@ -2,7 +2,7 @@
 import { Lightbulb } from "lucide-react";
 import { formatKm, haversineKm } from "@/lib/geo";
 import type { LatLng, Place } from "@/lib/types";
-import { CategoryIcon } from "./icons";
+import { CategoryIcon, DirectionsIcon } from "./icons";
 import { PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
 
 type Props = {
@@ -14,12 +14,13 @@ type Props = {
   selected?: boolean;
   onDetails?: () => void;
   onChoose?: () => void;
+  onStart?: () => void;
   chooseLabel?: string;
   onSelect?: () => void;
   compact?: boolean;
 };
 
-export default function PlaceCard({ place, from, fromLabel, reason, badge, selected, onDetails, onChoose, chooseLabel = "اختره", onSelect, compact }: Props) {
+export default function PlaceCard({ place, from, fromLabel, reason, badge, selected, onDetails, onChoose, onStart, chooseLabel = "اختره", onSelect, compact }: Props) {
   const dist = from ? haversineKm(from, place.location) : undefined;
   return (
     <div
@@ -48,8 +49,13 @@ export default function PlaceCard({ place, from, fromLabel, reason, badge, selec
         {reason && <p className="flex gap-1.5 rounded-lg bg-brand-50 p-2 text-xs leading-5 text-brand-700">
             <Lightbulb className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {reason}
           </p>}
-        {(onDetails || onChoose) && (
+        {(onDetails || onChoose || onStart) && (
           <div className="flex gap-2 pt-1">
+            {onStart && (
+              <button onClick={(e) => (e.stopPropagation(), onStart())} className="inline-flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-brand-500 py-1.5 text-sm font-bold text-white hover:bg-brand-600">
+                <DirectionsIcon className="size-4" /> ابدأ رحلتك
+              </button>
+            )}
             {onChoose && (
               <button onClick={(e) => (e.stopPropagation(), onChoose())} className="flex-1 rounded-xl bg-brand-500 py-1.5 text-sm font-medium text-white hover:bg-brand-600">
                 {chooseLabel}

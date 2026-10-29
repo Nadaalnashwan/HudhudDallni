@@ -1,6 +1,6 @@
 "use client";
 import { BarChart3, ChevronLeft, CircleUserRound, Navigation, Search, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
 import { formatKm, formatLeg, RIYADH_CENTER } from "@/lib/geo";
@@ -68,7 +68,17 @@ export default function HudhudApp() {
   const tripApi = useTrip();
   const trip = tripApi.trip;
 
-  const say = (m: Omit<ChatMessage, "id">) => setMessages((x) => [...x, { id: uid(), ...m }]);
+  // The plan card sits in the chat right under the reply that created or last changed it.
+  const [planAfterId, setPlanAfterId] = useState<string | null>(null);
+  const planMoved = useRef(false);
+  const say = (m: Omit<ChatMessage, "id">) => {
+    const id = uid();
+    if (m.role === "assistant" && planMoved.current) {
+      planMoved.current = false;
+      setPlanAfterId(id);
+    }
+    setMessages((x) => [...x, { id, ...m }]);
+  };
 
   // --- boot: config, saved prefs, a started outing waiting for feedback
   useEffect(() => {
@@ -126,6 +136,7 @@ export default function HudhudApp() {
     setPlan(next);
     setFocus(null);
     savePlan(next);
+    planMoved.current = true;
     return next;
   };
 
@@ -165,7 +176,7 @@ export default function HudhudApp() {
       const swapped = before.stops[i] && before.stops[i].step.category !== s.step.category;
       parts.push(i === changedAt ? (swapped ? `حطيت ${typeLabel(s.step)} بدال ${"ال" + CATEGORY_META[before.stops[i].step.category].label}: ${s.place.name}` : `غيّرت ${label} إلى ${s.place.name}`) : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
     });
-    say({ role: "assistant", text: parts.length ? parts.join("\n") : "حدّثت الخطة.", places: after.stops.length === 1 ? [after.stops[0].place, ...after.stops[0].alternatives] : undefined });
+    say({ role: "assistant", text: parts.length ? parts.join("\n") : "حدّثت الخطة." });
   };
 
   /** Rebuild from index i: earlier stops and locked later stops stay; the rest re-anchor on the new chain. */
@@ -187,7 +198,13 @@ export default function HudhudApp() {
       plan.id,
     );
     setBusyIndex(null);
-    if (next) describeChange(plan, next, i);
+    if (!next) return;
+    // One-stop result picked from its cards: the selection moves in place, with no repeat of the cards.
+    if (plan.stops.length === 1 && next.stops.length === 1 && o.place) {
+      planMoved.current = false;
+      return;
+    }
+    describeChange(plan, next, i);
   };
 
   const replaceStop = (i: number, o: Omit<RebuildOpts, "place"> = {}) => {
@@ -403,6 +420,8 @@ export default function HudhudApp() {
 
   // --- map data
   const stopsOnMap = useMemo(() => plan?.stops.map((s) => s.place) ?? [], [plan]);
+  // A one-stop plan shown as cards in the chat starts from its card; otherwise the plan card shows.
+  const cardStop = plan?.stops.length === 1 && messages.some((m) => m.places?.some((p) => p.id === plan.stops[0].place.id)) ? plan.stops[0].place : undefined;
   const altsOnMap = useMemo(() => {
     if (!plan) return [];
     const i = focus?.stopIndex ?? (plan.stops.length === 1 ? 0 : -1);
@@ -585,14 +604,17 @@ export default function HudhudApp() {
             busy={busy && busyIndex === null}
             disabled={busy || busyIndex !== null}
             chosenIds={stopsOnMap.map((p) => p.id)}
+            startId={cardStop?.id}
+            onStart={startPlanTrip}
             from={plan?.origin ?? userOrigin.loc}
             fromLabel={plan?.originLabel ?? userOrigin.label}
             onSend={send}
             onChoose={chooseAlternative}
             onDetails={setDetails}
             onSelect={selectOnMap}
-            header={
-              plan && plan.stops.length > 0 ? (
+            planAfterId={planAfterId}
+            plan={
+              plan && plan.stops.length > 0 && !cardStop ? (
                 <div className="pb-1">
                   <PlanPipeline
                     plan={plan}
@@ -605,7 +627,10 @@ export default function HudhudApp() {
                     onStart={startPlanTrip}
                   />
                 </div>
-              ) : messages.length <= 1 ? (
+              ) : null
+            }
+            header={
+              messages.length <= 1 && !plan?.stops.length ? (
                 // welcome screen
                 <div className="flex justify-center pb-4 pt-8">
                   <MishwarakLogo markClassName="size-16" textClassName="text-3xl" />

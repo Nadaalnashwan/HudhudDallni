@@ -3,7 +3,7 @@ import { Lightbulb } from "lucide-react";
 import { formatKm, haversineKm } from "@/lib/geo";
 import type { LatLng, Place } from "@/lib/types";
 import { CategoryIcon, DirectionsIcon } from "./icons";
-import { PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
+import { locationText, PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
 
 type Props = {
   place: Place;
@@ -22,6 +22,7 @@ type Props = {
 
 export default function PlaceCard({ place, from, fromLabel, reason, badge, selected, onDetails, onChoose, onStart, chooseLabel = "اختره", onSelect, compact }: Props) {
   const dist = from ? haversineKm(from, place.location) : undefined;
+  const loc = locationText(place);
   return (
     <div
       onClick={onSelect}
@@ -43,6 +44,7 @@ export default function PlaceCard({ place, from, fromLabel, reason, badge, selec
           </span>
           <Price level={place.priceLevel} />
           {dist !== undefined && <span>• {formatKm(dist)}{fromLabel ? ` من ${fromLabel}` : ""}</span>}
+          {loc?.warn && <span className="text-amber-900">• {loc.short}</span>}
         </div>
         <p className="line-clamp-1 text-xs text-muted">{place.address}</p>
         {!compact && <TagChips place={place} />}

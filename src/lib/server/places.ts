@@ -1,4 +1,5 @@
 import "server-only";
+import { nameMatchScore } from "../arabic";
 import { CATEGORY_META, SUBCATEGORY_META } from "../catalog";
 import { DEMO_PLACES } from "../demoPlaces";
 import { haversineKm } from "../geo";
@@ -25,20 +26,32 @@ type SearchOpts = {
   near: LatLng;
 };
 
-/** Candidates for one step. Returns the full filtered set; the planner ranks by distance. */
+/**
+ * Places whose name matches what the user typed, best match first ("أكاديمية طويق", "التعليم",
+ * "النخيل مول"). Matching ignores hamza/ta-marbuta/diacritic spelling and a leading "ال".
+ */
+export function matchByName(pool: Place[], query?: string): Place[] {
+  if (!query?.trim()) return [];
+  return pool
+    .map((p) => ({ p, s: nameMatchScore(p.name, query) }))
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.p);
+}
+
+/** Candidates for one step. Returns the full filtered set (named matches first); the planner ranks by distance. */
 export async function searchPlaces(opts: SearchOpts): Promise<Place[]> {
   const mode = placesMode();
   if (mode === "supabase") {
     const rows = await queryPlaces(opts);
-    const named = opts.query ? rows.filter((p) => p.name.includes(opts.query!)) : [];
+    const named = matchByName(rows, opts.query);
     return named.length ? named : rows;
   }
   if (mode === "google") return googleSearch(opts);
 
   let pool = DEMO_PLACES.filter((p) => p.category === opts.category && (!opts.subcategory || p.subcategory === opts.subcategory));
   if (opts.neighborhood) pool = pool.filter((p) => p.district === opts.neighborhood);
-  const q = opts.query?.replace(/\(تجريبي\)/g, "").trim();
-  const named = q ? pool.filter((p) => p.name.includes(q)) : [];
+  const named = matchByName(pool, opts.query?.replace(/\(تجريبي\)/g, ""));
   return named.length ? named : pool;
 }
 
@@ -116,6 +129,8 @@ function fromGoogle(p: GooglePlace, category: Category, subcategory?: Subcategor
     openNow: p.currentOpeningHours?.openNow,
     source: "google",
     isDemo: false,
+    locationStatus: "verified",
+    locationSource: "google",
   };
 }
 

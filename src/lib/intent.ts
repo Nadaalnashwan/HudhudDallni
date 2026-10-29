@@ -29,10 +29,19 @@ const CATEGORY_WORDS: Record<Category, string[]> = {
   park: ["حديقه", "منتزه", "ممشي", "امشي", "اتمشي", "تمشيه"],
   mall: ["مول", "تسوق", "مجمع تجاري"],
   entertainment: ["ترفيه", "العاب", "قيمز", "ملاهي"],
+  laundry: ["مغسله", "مغاسل", "مصبغه", "غسيل", "laundry"],
+  mosque: ["مسجد", "مساجد", "جامع", "مصلي", "mosque"],
+  sports: ["ملعب", "ملاعب"],
+  education: ["مدرسه", "مدارس", "school"],
+  transport: ["مترو", "metro"],
+  government: ["وزاره", "وزارات", "ministry", "جهه حكوميه"],
 };
 
-// A cuisine/type word alone ("أبي برجر") implies its category only where that is unambiguous.
-const IMPLYING: Category[] = ["restaurant", "dessert", "entertainment"];
+// A cuisine/type word alone ("أبي برجر", "أبي بادل") implies its category only where that is unambiguous.
+const IMPLYING: Category[] = ["restaurant", "dessert", "entertainment", "laundry", "mosque", "sports", "education", "transport", "government"];
+// Words that must end where the word ends: "جامع" (mosque) is not the start of "جامعه" (university).
+const WHOLE_WORDS = new Set(["جامع"]);
+const wordRe = (w: string, flags?: string) => new RegExp(PREFIX + normalize(w) + (WHOLE_WORDS.has(w) ? "(?![\\u0621-\\u064A])" : ""), flags);
 const STEP_SEPARATOR = /(بعده|بعدها|بعدين|ثم|وبعد)/;
 const REFERENCE = /(?:^|\s)(من|عند|جنب|حول|قرب|بعد|قبل)\s*$/;
 
@@ -53,14 +62,14 @@ const ORDINALS: [RegExp, (n: number) => number][] = [
   [/(الاخير|اخر مكان|اخر محطه)/, (n) => n - 1],
 ];
 
-const firstMatch = (text: string, w: string) => new RegExp(PREFIX + normalize(w)).exec(text)?.index ?? -1;
+const firstMatch = (text: string, w: string) => wordRe(w).exec(text)?.index ?? -1;
 
 function findCategories(text: string): { category: Category; at: number }[] {
   const hits: { category: Category; at: number }[] = [];
   const add = (category: Category, words: string[]) => {
     for (const w of words) {
       // every occurrence, so "كوفي ... وبعده كوفي ثاني" yields two stops
-      const re = new RegExp(PREFIX + normalize(w), "g");
+      const re = wordRe(w, "g");
       for (const m of text.matchAll(re)) {
         // "قريب من الكوفي" refers back to an earlier stop — it is not a new stop
         if (REFERENCE.test(text.slice(0, m.index! + 1))) continue;
@@ -79,9 +88,45 @@ function findCategories(text: string): { category: Category; at: number }[] {
   for (const h of hits) {
     const last = out[out.length - 1];
     if (last && last.category === h.category && !STEP_SEPARATOR.test(text.slice(last.at, h.at))) continue;
+    // "نادي بادل" is a padel club, not a gym followed by a court
+    if (last?.category === "gym" && h.category === "sports" && /^\s*\S+\s*$/.test(text.slice(last.at, h.at)) && !text.slice(h.at).trimStart().startsWith("و")) {
+      out[out.length - 1] = h;
+      continue;
+    }
     out.push(h);
   }
   return out;
+}
+
+// Types people usually ask for by name: "جامعة الملك سعود", "أكاديمية طويق", "وزارة التعليم", "النخيل مول".
+const NAMED_SUBS: Subcategory[] = ["university", "academy", "ministry"];
+const TYPE_NOUNS = new Set(["جامعه", "جامعات", "اكاديميه", "اكاديميات", "اكادميه", "وزاره", "وزارات", "مول", "مولات", "مجمع", "تجاري"]);
+const NAME_STOP = new Set(
+  ("قريب قريبه اقرب الاقرب مني منه منها لي في فيه حي بحي عند جنب من الي علي وبعده وبعدها بعده بعدها بعدين ثم و او " +
+    "تقييم تقييمه افضل احسن الحين اليوم بس فقط لو سمحت ابي ابغي ابغا ابا ودي ودني وديني عطني اعطني اروح نروح روح خذني دلني وين ممكن").split(" "),
+);
+const bare = (t: string) => t.replace(/^[وبلف](?=ال)/, "").replace(/^ال(?=\S{2})/, "");
+const isDistrict = (t: string) => Object.keys(DISTRICTS).some((d) => bare(normalize(d)) === bare(t));
+const nameWord = (t: string) => !NAME_STOP.has(t) && !NAME_STOP.has(bare(t)) && !isDistrict(t);
+const words = (s: string) => s.split(/[\s،,.؟?!:\-←>]+/).filter(Boolean);
+
+/** The name the user gave for a stop, e.g. "التعليم" in "أبي وزارة التعليم". Only for types usually asked for by name. */
+function findPlaceName(segment: string, before: string, category: Category, sub?: Subcategory): string | undefined {
+  if (category !== "mall" && !(sub && NAMED_SUBS.includes(sub))) return undefined;
+  const after = words(segment);
+  while (after.length && TYPE_NOUNS.has(bare(after[0]))) after.shift();
+  const name: string[] = [];
+  for (const t of after) {
+    if (!nameWord(t) || name.length === 4) break;
+    name.push(t);
+  }
+  // "النخيل مول": a mall's name usually comes first
+  if (!name.length && category === "mall")
+    for (const t of words(before).reverse()) {
+      if (!nameWord(t) || findCategories(` ${t}`).length || name.length === 2) break;
+      name.unshift(t);
+    }
+  return name.length ? name.join(" ") : undefined;
 }
 
 /** The subcategory mentioned within one step's segment of the sentence, limited to that category. */
@@ -120,6 +165,8 @@ function stepsFrom(text: string): StepSpec[] {
     const step: StepSpec = { category };
     const sub = findSubcategory(segment, category);
     if (sub) step.subcategory = sub;
+    const placeName = findPlaceName(segment, text.slice(hits[i - 1]?.at ?? 0, at), category, sub);
+    if (placeName) step.placeName = placeName;
     return step;
   });
 }
@@ -253,7 +300,7 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
           pending: request,
         },
       };
-    if (!priority && !district && !steps[0].subcategory)
+    if (!priority && !district && !steps[0].subcategory && !steps[0].placeName)
       return {
         engine,
         reply: "تهمك المسافة أكثر أو التقييم؟",

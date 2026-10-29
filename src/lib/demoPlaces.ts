@@ -39,7 +39,27 @@ const NAMES: Record<Category, [string, Subcategory, PlaceTag[]][]> = {
   park: [["حديقة الواحة", "public_park", ["outdoor", "family"]]],
   mall: [["مول الشمال", "shopping", ["family"]]],
   entertainment: [["عالم الألعاب", "games", ["family"]]],
+  // Everyday places: like the database rows of these types, they carry no rating, price or hours.
+  laundry: [
+    ["مغسلة اللمعة للسيارات", "car_wash", []],
+    ["مصبغة النقاء", "clothes_laundry", []],
+  ],
+  mosque: [["جامع الحي", "mosque", []]],
+  sports: [
+    ["ملعب الأبطال", "football", []],
+    ["بادل الشمال", "padel", []],
+  ],
+  education: [
+    ["مدرسة الرواد الابتدائية", "primary_school", []],
+    ["ثانوية الأفق", "secondary_school", []],
+    ["جامعة المعرفة", "university", []],
+    ["أكاديمية المهارات", "academy", []],
+  ],
+  transport: [["محطة مترو الشمال", "metro_station", []]],
+  government: [["وزارة الخدمات", "ministry", []]],
 };
+
+const UNRATED = new Set<Category>(["laundry", "mosque", "sports", "education", "transport", "government"]);
 
 // Deterministic PRNG so demo data is stable between reloads.
 function mulberry32(seed: number) {
@@ -61,7 +81,7 @@ function build(): Place[] {
     NAMES[category].forEach(([name, subcategory, tags], i) => {
       for (let branch = 0; branch < 3; branch++) {
         const [district, c] = districts[(i * 5 + branch * 4 + category.length) % districts.length];
-        out.push({
+        const base = {
           id: `demo-${category}-${i}-${branch}`,
           name,
           category,
@@ -69,13 +89,22 @@ function build(): Place[] {
           location: { lat: c.lat + (rand() - 0.5) * 0.03, lng: c.lng + (rand() - 0.5) * 0.03 },
           address: `حي ${district}، الرياض`,
           district,
+          tags,
+          source: "demo" as const,
+          isDemo: true,
+          locationStatus: "synthetic" as const,
+          locationSource: "synthetic",
+        };
+        if (UNRATED.has(category)) {
+          out.push(base);
+          continue;
+        }
+        out.push({
+          ...base,
           rating: Math.round((3.6 + rand() * 1.3) * 10) / 10,
           ratingCount: 40 + Math.floor(rand() * 2400),
           priceLevel: tags.includes("budget") ? 1 : 2 + Math.floor(rand() * 2),
-          tags,
           openNow: rand() > 0.15,
-          source: "demo",
-          isDemo: true,
         });
       }
     });

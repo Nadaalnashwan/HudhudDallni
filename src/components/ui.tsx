@@ -1,13 +1,14 @@
 "use client";
-import { FlaskConical, Star } from "lucide-react";
+import { FlaskConical, LocateFixed, MapPinned, Star } from "lucide-react";
 import { useRef, useState } from "react";
-import { CATEGORY_META, SUBCATEGORY_META, subcategoryImage, TAG_LABELS } from "@/lib/catalog";
+import { CATEGORY_META, locationStatusOf, SUBCATEGORY_META, subcategoryImage, TAG_LABELS } from "@/lib/catalog";
 import type { Place } from "@/lib/types";
 import { CategoryIcon } from "./icons";
 
 /**
  * A real photo of the venue when the data has one; otherwise a licensed generic
- * photo of the place type, captioned as illustrative. Falls back to an icon tile.
+ * photo of the place type, captioned as illustrative. Types without a local photo
+ * (and failed loads) get a colored tile with the category icon, like the map pin.
  */
 export function PlacePhoto({ place, className = "", caption = true }: { place: Place; className?: string; caption?: boolean }) {
   const generic = !place.photoUrl;
@@ -18,8 +19,8 @@ export function PlacePhoto({ place, className = "", caption = true }: { place: P
   const color = CATEGORY_META[place.category].color;
   if (i >= sources.length)
     return (
-      <div className={`flex items-center justify-center ${className}`} style={{ background: `linear-gradient(135deg, ${color}22, ${color}66)`, color }}>
-        <CategoryIcon category={place.category} className="size-8" />
+      <div role="img" aria-label={typeLabel(place)} className={`flex items-center justify-center text-white ${className}`} style={{ background: `linear-gradient(135deg, ${color}cc, ${color})` }}>
+        <CategoryIcon category={place.category} className="size-[45%] max-h-14 max-w-14" />
       </div>
     );
   const genericNow = generic || i > 0;
@@ -33,14 +34,19 @@ export function PlacePhoto({ place, className = "", caption = true }: { place: P
 }
 
 /** Subcategories that already name the place type on their own ("قهوة مختصة", not "مقهى قهوة مختصة"). */
-const STANDALONE = new Set(["specialty_coffee", "bakery", "ice_cream", "public_park", "games"]);
+const STANDALONE = new Set([
+  ...["specialty_coffee", "bakery", "ice_cream", "games"],
+  ...["car_wash", "clothes_laundry", "football", "padel", "primary_school", "secondary_school", "university", "academy", "metro_station", "ministry"],
+]);
 
 export const typeLabel = (p: Pick<Place, "category" | "subcategory">) =>
-  !p.subcategory || SUBCATEGORY_META[p.subcategory].label.includes(CATEGORY_META[p.category].label)
+  !p.subcategory
     ? CATEGORY_META[p.category].label
     : STANDALONE.has(p.subcategory)
       ? SUBCATEGORY_META[p.subcategory].label
-      : `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`;
+      : SUBCATEGORY_META[p.subcategory].label.includes(CATEGORY_META[p.category].label)
+        ? CATEGORY_META[p.category].label
+        : `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`;
 
 export function Stars({ value, size = "text-sm" }: { value?: number; size?: string }) {
   if (!value) return <span className="text-xs text-muted">بدون تقييم</span>;
@@ -67,14 +73,40 @@ export function TagChips({ place }: { place: Place }) {
 }
 
 export function DemoBadge({ place }: { place: Place }) {
-  if (!place.isDemo) return null;
+  if (place.isDemo)
+    return (
+      <span
+        title="مكان من بيانات مولّدة للعرض: الاسم والموقع والتقييم ليست لمنشأة حقيقية، والصورة توضيحية."
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+      >
+        <FlaskConical className="size-3" aria-hidden /> مكان تجريبي
+      </span>
+    );
+  if (locationStatusOf(place) === "verified") return null;
   return (
-    <span
-      title="مكان من بيانات مولّدة للعرض: الاسم والموقع والتقييم ليست لمنشأة حقيقية، والصورة توضيحية."
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
-    >
-      <FlaskConical className="size-3" aria-hidden /> مكان تجريبي
+    <span title="مكان حقيقي، لكن نقطته على الخريطة تقريبية." className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+      <MapPinned className="size-3" aria-hidden /> موقع تقريبي
     </span>
+  );
+}
+
+/** How far the pin can be trusted, in a few words: "موقع تجريبي", "موقع تقريبي", or where a real location came from. */
+export function locationText(place: Place): { label: string; short: string; warn: boolean } | null {
+  const status = locationStatusOf(place);
+  if (status === "synthetic") return { label: "موقع تجريبي للعرض فقط", short: "موقع تجريبي", warn: true };
+  if (status === "approximate") return { label: "الموقع تقريبي", short: "موقع تقريبي", warn: true };
+  if (place.locationSource === "openstreetmap") return { label: "الموقع من OpenStreetMap", short: "OpenStreetMap", warn: false };
+  return null;
+}
+
+export function LocationNote({ place, className = "" }: { place: Place; className?: string }) {
+  const t = locationText(place);
+  if (!t) return null;
+  const Icon = t.warn ? MapPinned : LocateFixed;
+  return (
+    <p className={`flex items-center gap-1.5 ${t.warn ? "text-amber-900" : "text-muted"} ${className}`}>
+      <Icon className="size-4 shrink-0" aria-hidden /> {t.label}
+    </p>
   );
 }
 

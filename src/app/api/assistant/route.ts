@@ -48,6 +48,10 @@ LEARNED = تفضيلات ثابتة صرّح فيها المستخدم عن نف
 7. إذا فيه currentPlan: "غير/بدّل X" ← modify replace. "خل X إيطالي" ← replace مع step.subcategory. "بدل الحديقة بمول" ← replace مع step.category. "أقرب" ← nearer=true. "بس/فقط" ← onlyThis=true. "ثبت" ← lock. "فك التثبيت" ← unlock. "شيل/احذف" ← remove. "أضف/زيد X" ← add (مع after إذا حدد مكانه مثل "بعد النادي").
 8. طلب جديد كامل حتى لو فيه خطة حالية ← plan جديد.`;
 
+// Places expansion: named landmarks and everyday places. Kept apart from the intent rules above.
+const PLACE_HINTS = `
+أماكن بالاسم أو خدمات يومية: "ودني أكاديمية طويق" ← education/academy مع placeName "طويق". "أبي وزارة التعليم" ← government/ministry مع placeName "التعليم". "جامعة الملك سعود" ← education/university مع placeName "الملك سعود". "النخيل مول" ← mall مع placeName "النخيل". "مغسلة سيارات" ← laundry/car_wash، "مصبغة" ← laundry/clothes_laundry، "جامع/مسجد" ← mosque، "ملعب كورة" ← sports/football، "محطة مترو" ← transport/metro_station.`;
+
 const isPriority = (p: unknown): p is Priority => p === "distance" || p === "rating" || p === "balanced";
 const cleanTags = (t?: unknown) => (Array.isArray(t) ? (t.filter((x) => TAGS.includes(x)) as PlaceTag[]) : []);
 /** Drop any subcategory the model made up or attached to the wrong category. */
@@ -137,7 +141,7 @@ export async function POST(req: Request) {
 
   try {
     const out = await geminiJson<{ reply?: string; action?: Record<string, unknown>; learned?: Record<string, unknown> | null }>(
-      SYSTEM,
+      SYSTEM + PLACE_HINTS,
       JSON.stringify({
         message,
         currentPlan: context.planSteps.map((s, i) => ({ index: i, category: s.category, subcategory: s.subcategory ?? null, locked: s.locked })),

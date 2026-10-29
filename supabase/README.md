@@ -3,7 +3,7 @@
 Mishwarak stores its data in the **`hudhud_demo`** schema of a Supabase Postgres project. The browser connects with the publishable key, and row-level security (RLS) enforces every access rule. No service-role key is used anywhere in the app.
 
 > [!NOTE]
-> The base schema and its synthetic seed (420 places) were created in the Supabase SQL Editor and are not checked into this repository. This folder holds only the migrations applied on top of that seed.
+> The base schema and its original synthetic seed (420 places) were created in the Supabase SQL Editor and are not checked into this repository. This folder holds only the migrations applied on top of that seed.
 
 ## Project setup
 
@@ -19,6 +19,7 @@ Then set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` i
 | File | Adds |
 |---|---|
 | [`20261029_dallni_assistant_feedback.sql`](migrations/20261029_dallni_assistant_feedback.sql) | `assistant_feedback` table with owner-only RLS, and the `dallni_stats()` function, which returns aggregate counts only |
+| [`20261029_places_expansion.sql`](migrations/20261029_places_expansion.sql) | `location_status` / `location_source` columns, the wider category checks, and 202 new places (see [Seed data](#seed-data)). Idempotent: it inserts only rows whose `seed_key` is missing. |
 
 ## Access model
 
@@ -43,22 +44,38 @@ If Supabase is configured but unreachable, the app shows an error. It never quie
 
 ## Seed data
 
-The seed holds 420 synthetic places across 10 Riyadh districts: 21 subcategories × 10 districts × 2 places each. Names, ratings, and coordinates are generated. They do not describe real businesses.
+The database holds 622 places:
+
+| Source | Places | Location |
+|---|---|---|
+| Original seed: 21 subcategories × 10 districts × 2 | 420 | `synthetic` |
+| Expansion: car washes, clothes laundries, mosques, football fields, padel courts, primary and secondary schools (7 subcategories × 10 districts × 2) | 140 | `synthetic` |
+| Expansion: 9 universities, Tuwaiq Academy, 8 malls, 20 Riyadh Metro stations, 24 ministries | 62 | 52 `verified`, 10 `approximate` |
+
+Synthetic places are named `تجريبي - …` and have `is_demo = true`. Their names, coordinates (and, for the original seed, ratings) are generated and do not describe real businesses.
+
+The 62 landmarks are real. A `verified` location is the coordinate of the matching OpenStreetMap feature, and `location_source` holds its id (for example `openstreetmap:way/636659011`). An `approximate` location is a best estimate, such as a ministry with no OpenStreetMap feature, and the app labels it as approximate. Landmarks have no rating, review count, price level, opening hours, image or address: those columns are `NULL`, because nothing verified was available.
 
 These queries check that a project matches the expected seed:
 
 ```sql
--- Total places: 420
+-- Total places: 622
 select count(*) from hudhud_demo.places;
 
--- 21 category/subcategory pairs, 20 places each
+-- 32 category/subcategory pairs
 select category, subcategory, count(*)
 from hudhud_demo.places
 group by 1, 2
 order by 1, 2;
 
--- 10 districts, 42 places each
+-- Synthetic places per district: 56 in each of the 10 districts
 select neighborhood, count(*)
+from hudhud_demo.places
+where location_status = 'synthetic'
+group by 1;
+
+-- Location status: 560 synthetic, 52 verified, 10 approximate
+select location_status, count(*)
 from hudhud_demo.places
 group by 1;
 

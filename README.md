@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://hudhud-dallni.vercel.app"><strong>Try the live demo →</strong></a>
+  <a href="https://hudhud-mishwarak.vercel.app"><strong>Try the live demo →</strong></a>
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ This repository contains the working prototype built for the *AI Feature Innovat
   <img src="docs/screenshots/plan-light.webp" alt="A three-stop outing plan (gym, café, burger restaurant) drawn as a road route on the map, with the plan cards in the assistant panel">
 </picture>
 
-The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it uses the offline demo dataset and the rule-based dialect parser, and says so under Settings (الإعدادات).
+The [live demo](https://hudhud-mishwarak.vercel.app) runs on the Supabase database (420 synthetic places) with Gemini for dialect understanding. Settings (الإعدادات) shows which sources are live.
 
 > [!NOTE]
 > Mishwarak is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
@@ -162,7 +162,7 @@ All variables are optional and go in `.env.local`, which git ignores. [`.env.exa
 
 ## Deployment
 
-The app is a standard Next.js project and deploys to [Vercel](https://vercel.com) without extra configuration. Add any variables from the table above in the project's environment settings. Keep Gemini and `GOOGLE_MAPS_API_KEY` as server-side variables. Anything you leave unset falls back to demo mode, which is how the [live demo](https://hudhud-dallni.vercel.app) runs.
+The app is a standard Next.js project and deploys to [Vercel](https://vercel.com) without extra configuration. Add any variables from the table above in the project's environment settings. Keep Gemini and `GOOGLE_MAPS_API_KEY` as server-side variables. Anything you leave unset falls back to demo mode.
 
 For real traffic, point `OSRM_URL` at your own OSRM server or configure the Google Routes API, because the public OSRM demo server is not meant for production use.
 

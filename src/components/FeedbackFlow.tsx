@@ -164,7 +164,7 @@ export default function FeedbackFlow({
             <CategoryIcon category={visit.category} />
           </span>
           <div>
-            <p className="text-xs text-muted">دلّني</p>
+            <p className="text-xs text-muted" dir="ltr">Mishwarak</p>
             <p className="font-semibold">{name}</p>
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function FeedbackFlow({
 
         {step === "draft" && (
           <>
-            <p className="text-sm text-muted">صاغ دلّني تقييمك من كلامك، تقدر تعدّله:</p>
+            <p className="text-sm text-muted">صاغ Mishwarak تقييمك من كلامك، تقدر تعدّله:</p>
             {loading && !draft ? (
               <div className="flex items-center gap-2 text-sm text-muted"><Spinner /> جاري الصياغة...</div>
             ) : (
@@ -235,7 +235,7 @@ export default function FeedbackFlow({
 
         {step === "consent" && (
           <>
-            <p className="text-lg">تسمح لدلّني يحفظ تفضيلاتك من هالتجربة؟</p>
+            <p className="text-lg">تسمح لـ Mishwarak يحفظ تفضيلاتك من هالتجربة؟</p>
             <p className="text-sm text-muted">هذا منفصل عن نشر التقييم. مثلاً لو قلت إن المكان زحمة، بركّز على الأماكن الموصوفة بأنها هادية. تقدر تمسحها أي وقت من الإعدادات.</p>
             <div className="flex gap-2">
               <button onClick={() => consent(true)} className="flex-1 rounded-xl bg-brand-500 py-2 text-white">إيه احفظها</button>

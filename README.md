@@ -1,11 +1,8 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/branding/dallni-dark.png">
-    <img src="public/branding/dallni-light.png" alt="Dallni logo" width="140">
-  </picture>
+  <img src="public/branding/mishwarak-mark.svg" alt="Mishwarak logo" width="120">
 </p>
 
-<h1 align="center">Dallni (دلّني)</h1>
+<h1 align="center">Mishwarak (مشوارك)</h1>
 
 <p align="center">
   <strong>An AI outing assistant concept for Hudhud Maps that understands Saudi dialect and plans multi-stop trips on the map.</strong>
@@ -25,7 +22,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/demo.webp" alt="Dallni turning one Arabic request into a three-stop plan, then replacing the café on request" width="800">
+  <img src="docs/screenshots/demo.webp" alt="Mishwarak turning one Arabic request into a three-stop plan, then replacing the café on request" width="800">
 </p>
 
 ---
@@ -34,13 +31,13 @@
 
 [Hudhud Maps](https://hudhud.sa/en) is a Saudi navigation app that is good at getting people to a destination. It is less helpful at deciding *where* to go. Its search works one keyword and one place at a time. To plan an evening with several stops (a gym, then a café nearby, then dinner), users search, compare, and search again for each stop.
 
-**Dallni** ("guide me" in Saudi Arabic) is an assistant that sits inside the Hudhud map and closes that gap. A user writes one message in their own dialect:
+**Mishwarak** (مشوارك, "your outing" in Saudi Arabic) is an assistant that sits inside the Hudhud map and closes that gap. A user writes one message in their own dialect:
 
 > أبي نادي في الصحافة، وبعده كوفي قريب منه، وبعده مطعم برجر قريب من الكوفي
 >
 > *"A gym in Al Sahafa, then a café near it, then a burger place near the café."*
 
-Dallni turns that message into an ordered plan on the map. Each stop is chosen near the previous one, with a short reason for the pick. The user can refine the plan in conversation, start an in-app trip, and afterwards publish an AI-drafted review, but only if they consent.
+Mishwarak turns that message into an ordered plan on the map. Each stop is chosen near the previous one, with a short reason for the pick. The user can refine the plan in conversation, start an in-app trip, and afterwards publish an AI-drafted review, but only if they consent.
 
 This repository contains the working prototype built for the *AI Feature Innovation Project*. The interface is in Arabic and right-to-left, as it would ship to Hudhud's users.
 
@@ -52,7 +49,7 @@ This repository contains the working prototype built for the *AI Feature Innovat
 The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it uses the offline demo dataset and the rule-based dialect parser, and says so under Settings (الإعدادات).
 
 > [!NOTE]
-> Dallni is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
+> Mishwarak is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
 
 ## Features
 
@@ -64,8 +61,8 @@ The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it 
 | **Explainable picks** | Every stop shows its rating, its approximate distance from the previous stop, and why it was chosen. Alternatives appear as secondary pins on the map. |
 | **In-app trip** | Starts from the user's GPS position or a point they choose, follows a road route, shows basic Arabic turn guidance, and moves through the stops in order. |
 | **Consent-based reviews** | After a visit, the user rates it. Gemini drafts a short review from the user's own words, and it is published only after the user explicitly agrees. |
-| **Personalization with consent** | With a separate opt-in, Dallni remembers stated tastes (preferred cuisines, café types, districts, budget, things to avoid). Users can view or erase them from the settings sheet. |
-| **Assistant feedback** | After an outing, Dallni asks once whether it helped (at most every 12 hours). An aggregate-only dashboard summarizes the answers. |
+| **Personalization with consent** | With a separate opt-in, Mishwarak remembers stated tastes (preferred cuisines, café types, districts, budget, things to avoid). Users can view or erase them from the settings sheet. |
+| **Assistant feedback** | After an outing, Mishwarak asks once whether it helped (at most every 12 hours). An aggregate-only dashboard summarizes the answers. |
 | **Light and dark themes** | Follows the device setting until the user picks a theme. The theme is applied before first paint, so there is no flash. |
 
 ## How it works
@@ -122,8 +119,8 @@ Every external service is optional. The app always tells the user which mode it 
 ### Install and run
 
 ```bash
-git clone https://github.com/Nadaalnashwan/HudhudDallni.git
-cd HudhudDallni
+git clone https://github.com/Nadaalnashwan/HudhudMishwarak.git
+cd HudhudMishwarak
 npm install
 cp .env.example .env.local   # optional: add keys (see Configuration)
 npm run dev
@@ -207,8 +204,8 @@ src/
 │   ├── PlaceSheet.tsx          Place details and published reviews
 │   ├── TripNavigator.tsx       In-app trip: origin, routing, guidance
 │   ├── FeedbackFlow.tsx        Post-visit rating, review draft, consent
-│   ├── DallniFeedback.tsx      Feedback about the assistant and the stats sheet
-│   ├── DallniLogo.tsx          Theme-aware logo
+│   ├── AssistantFeedback.tsx   Feedback about the assistant and the stats sheet
+│   ├── Brand.tsx               Mishwarak mark and logo
 │   ├── ThemeToggle.tsx         Light/dark switch
 │   ├── icons.tsx, ui.tsx       Shared presentational components
 │   └── map/                    MapView, Leaflet and Google Maps implementations
@@ -231,7 +228,7 @@ supabase/
 ├── README.md                   Database setup and access model
 └── migrations/                 SQL applied on top of the seed
 public/
-├── branding/                   Dallni logo, light and dark variants
+├── branding/                   Mishwarak mark (SVG)
 └── images/places/              Illustrative photos per place type (see CREDITS.md)
 docs/screenshots/               README images
 ```
@@ -277,4 +274,4 @@ Built during a Tuwaiq Academy bootcamp as part of the *AI Feature Innovation Pro
 
 The source code is released under the [MIT License](LICENSE).
 
-The license covers the code only. The Dallni logo in [`public/branding/`](public/branding) belongs to the team and is not licensed for reuse. "Hudhud" is a trademark of its owner. The place photos remain under the [Unsplash License](https://unsplash.com/license).
+The license covers the code only. The Mishwarak logo in [`public/branding/`](public/branding) belongs to the team and is not licensed for reuse. "Hudhud" is a trademark of its owner. The place photos remain under the [Unsplash License](https://unsplash.com/license).

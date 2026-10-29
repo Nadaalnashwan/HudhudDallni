@@ -11,8 +11,8 @@ const arabic = IBM_Plex_Sans_Arabic({
 const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("hudhud.theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
 
 export const metadata: Metadata = {
-  title: "هدهد — دلّني",
-  description: "دلّني: المساعد الذكي داخل هدهد يخطط طلعتك ويتعلم من تجاربك",
+  title: "هدهد — Mishwarak",
+  description: "Mishwarak (مشوارك): المساعد الذكي داخل هدهد يخطط طلعتك ويتعلم من تجاربك",
 };
 
 export const viewport: Viewport = {

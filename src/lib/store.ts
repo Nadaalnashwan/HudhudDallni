@@ -210,7 +210,7 @@ export async function listReviews(place: Place): Promise<Review[]> {
   return ls.get<Review[]>("hudhud.reviews", []).filter((r) => r.placeId === place.id);
 }
 
-// ---------------------------------------------------------------- Dallni feedback (about the assistant, not places)
+// ---------------------------------------------------------------- assistant feedback (about Mishwarak itself, not places)
 
 export type AssistantFeedback = {
   helpful: "yes" | "partly" | "no";
@@ -218,15 +218,15 @@ export type AssistantFeedback = {
   improvements: ("accuracy" | "proximity" | "variety" | "understanding" | "editing")[];
 };
 
-const ASK_KEY = "hudhud.dallniAsked";
+const ASK_KEY = "hudhud.dallniAsked"; // original key kept so earlier answers still count
 const ASK_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 /** Ask at most once per outing, and not again within 12 hours — never nag. */
-export function shouldAskDallni(planKey: string): boolean {
+export function shouldAskForAssistantFeedback(planKey: string): boolean {
   const a = ls.get<{ keys: string[]; at: number }>(ASK_KEY, { keys: [], at: 0 });
   return !a.keys.includes(planKey) && Date.now() - a.at > ASK_COOLDOWN_MS;
 }
-export function markDallniAsked(planKey: string) {
+export function markAssistantFeedbackAsked(planKey: string) {
   const a = ls.get<{ keys: string[]; at: number }>(ASK_KEY, { keys: [], at: 0 });
   ls.set(ASK_KEY, { keys: [...a.keys, planKey].slice(-50), at: Date.now() });
 }
@@ -246,7 +246,7 @@ export async function saveAssistantFeedback(f: AssistantFeedback, planId?: strin
   return "local";
 }
 
-export type DallniStats = {
+export type AssistantStats = {
   plans_started: number;
   responses: number;
   helpful_yes: number;
@@ -260,9 +260,9 @@ export type DallniStats = {
 };
 
 /** Aggregate-only numbers from the database (no individual feedback is ever read). */
-export async function loadDallniStats(): Promise<DallniStats | null> {
+export async function loadAssistantStats(): Promise<AssistantStats | null> {
   const db = getBrowserSupabase();
   if (!db) return null;
-  const { data, error } = await db.rpc("dallni_stats");
-  return error ? null : (data as DallniStats);
+  const { data, error } = await db.rpc("dallni_stats"); // database function keeps the prototype's original name
+  return error ? null : (data as AssistantStats);
 }

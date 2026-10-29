@@ -1,6 +1,6 @@
 # Database (Supabase)
 
-Dallni stores its data in the **`hudhud_demo`** schema of a Supabase Postgres project. The browser connects with the publishable key, and row-level security (RLS) enforces every access rule. No service-role key is used anywhere in the app.
+Mishwarak stores its data in the **`hudhud_demo`** schema of a Supabase Postgres project. The browser connects with the publishable key, and row-level security (RLS) enforces every access rule. No service-role key is used anywhere in the app.
 
 > [!NOTE]
 > The base schema and its synthetic seed (420 places) were created in the Supabase SQL Editor and are not checked into this repository. This folder holds only the migrations applied on top of that seed.
@@ -29,7 +29,7 @@ Then set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` i
 | `user_preferences`, `visits`, `feedback`, `outing_plans`, `outing_stops`, `assistant_feedback` | No access | Own rows only |
 | `dallni_stats()` | Aggregate counts only | Aggregate counts only |
 
-`dallni_stats()` is a `security definer` function with an empty `search_path`. It returns totals only, never individual rows, so the stats sheet can show evaluation numbers without exposing anyone's responses.
+`dallni_stats()` keeps the prototype's original name (the project was first called Dallni), so existing databases need no migration. It is a `security definer` function with an empty `search_path`. It returns totals only, never individual rows, so the stats sheet can show evaluation numbers without exposing anyone's responses.
 
 ## How the app uses the database
 

@@ -4,11 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
 import { formatKm, formatLeg, RIYADH_CENTER } from "@/lib/geo";
-import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, markDallniAsked, savePlan, savePreferences, saveVisits, shouldAskDallni, storeStatus, type StoreStatus } from "@/lib/store";
+import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, markAssistantFeedbackAsked, savePlan, savePreferences, saveVisits, shouldAskForAssistantFeedback, storeStatus, type StoreStatus } from "@/lib/store";
 import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
-import DallniFeedback, { DallniStatsSheet } from "./DallniFeedback";
-import DallniLogo from "./DallniLogo";
+import AssistantFeedbackSheet, { AssistantStatsSheet } from "./AssistantFeedback";
+import { MishwarakLogo, MishwarakMark } from "./Brand";
 import { CategoryIcon, DirectionsIcon } from "./icons";
 import FeedbackFlow from "./FeedbackFlow";
 import MapView from "./map/MapView";
@@ -24,7 +24,7 @@ const uid = () => crypto.randomUUID();
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  text: "هلا والله! أنا دلّني، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
+  text: "هلا والله! أنا Mishwarak، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
 const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
 
@@ -60,10 +60,10 @@ export default function HudhudApp() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [feedbackOn, setFeedbackOn] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false); // map first; Dallni opens on demand
+  const [panelOpen, setPanelOpen] = useState(false); // map first; the assistant opens on demand
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
-  const [dallniAsk, setDallniAsk] = useState<{ planId?: string } | null>(null);
+  const [feedbackAsk, setFeedbackAsk] = useState<{ planId?: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const tripApi = useTrip();
   const trip = tripApi.trip;
@@ -381,13 +381,13 @@ export default function HudhudApp() {
     if (!next.some((v) => v.status === "pending")) setFeedbackOn(false);
   };
 
-  // An outing ended → once per outing (and not more than every 12 h) ask about Dallni itself.
+  // An outing ended → once per outing (and not more than every 12 h) ask about Mishwarak itself.
   useEffect(() => {
     if (trip?.phase !== "done") return;
     const key = trip.planId ?? trip.stops[0]?.id;
-    if (key && shouldAskDallni(key)) {
-      markDallniAsked(key);
-      setDallniAsk({ planId: trip.planId });
+    if (key && shouldAskForAssistantFeedback(key)) {
+      markAssistantFeedbackAsked(key);
+      setFeedbackAsk({ planId: trip.planId });
     }
     tripApi.clear();
   }, [trip?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -551,7 +551,7 @@ export default function HudhudApp() {
                 <Search className="size-5 shrink-0" aria-hidden />
                 <span className="flex-1 truncate text-right">وين ودك تروح اليوم؟</span>
                 <span className="flex h-8 w-9 shrink-0 items-center justify-center">
-                  <DallniLogo variant="icon" className="h-7 w-auto" priority sizes="40px" />
+                  <MishwarakMark className="size-7" />
                 </span>
               </button>
               <button onClick={() => setPrefsOpen(true)} className="flex size-11 shrink-0 items-center justify-center rounded-full bg-background text-muted" aria-label="الإعدادات">
@@ -562,21 +562,20 @@ export default function HudhudApp() {
         )}
       </div>
 
-      {/* Dallni: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
+      {/* Mishwarak: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
       <aside
-        aria-label="دلّني"
+        aria-label="Mishwarak"
         aria-hidden={!panelOpen}
         className={`absolute inset-x-0 bottom-0 z-[1100] h-[55dvh] flex-col rounded-t-3xl border-line bg-surface shadow-[0_-8px_30px_rgba(0,0,0,.12)] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[420px] md:rounded-none md:border-l ${
           panelOpen ? "flex" : "hidden"
         }`}
       >
-        <SheetHandle onClose={() => setPanelOpen(false)} label="إغلاق دلّني" />
+        <SheetHandle onClose={() => setPanelOpen(false)} label="إغلاق Mishwarak" />
         <div className="flex items-center justify-between gap-2 px-4 pb-1 md:pt-3">
           <h2>
-            <DallniLogo className="h-12 w-auto" sizes="60px" />
-            <span className="sr-only">دلّني</span>
+            <MishwarakLogo />
           </h2>
-          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق دلّني">
+          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق Mishwarak">
             <X className="size-4" />
           </button>
         </div>
@@ -608,8 +607,8 @@ export default function HudhudApp() {
                 </div>
               ) : messages.length <= 1 ? (
                 // welcome screen
-                <div className="flex justify-center pb-2 pt-4">
-                  <DallniLogo className="h-40 w-auto" sizes="180px" />
+                <div className="flex justify-center pb-4 pt-8">
+                  <MishwarakLogo markClassName="size-16" textClassName="text-3xl" />
                 </div>
               ) : null
             }
@@ -658,17 +657,17 @@ export default function HudhudApp() {
         )
       )}
 
-      {dallniAsk && (
-        <DallniFeedback
-          planId={dallniAsk.planId}
+      {feedbackAsk && (
+        <AssistantFeedbackSheet
+          planId={feedbackAsk.planId}
           onDone={(message) => {
-            setDallniAsk(null);
+            setFeedbackAsk(null);
             if (message) say({ role: "assistant", text: message });
           }}
         />
       )}
 
-      {statsOpen && <DallniStatsSheet onClose={() => setStatsOpen(false)} />}
+      {statsOpen && <AssistantStatsSheet onClose={() => setStatsOpen(false)} />}
 
       {prefsOpen && (
         <SettingsSheet
@@ -750,7 +749,7 @@ function SettingsSheet({
           </div>
           <button onClick={onStats} className={row}>
             <span className="inline-flex items-center gap-2">
-              <BarChart3 className="size-4 text-brand-600" aria-hidden /> مؤشرات دلّني
+              <BarChart3 className="size-4 text-brand-600" aria-hidden /> مؤشرات Mishwarak
             </span>
             <ChevronLeft className="size-4 text-muted" aria-hidden />
           </button>
@@ -759,7 +758,7 @@ function SettingsSheet({
         <h3 className="pb-2 pt-5 font-bold">تفضيلاتي</h3>
         <div className="space-y-3">
           <label className={row}>
-            <span>أسمح لدلّني يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
+            <span>أسمح لـ Mishwarak يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
             <input type="checkbox" checked={prefs.consent} onChange={(e) => onChange({ ...prefs, consent: e.target.checked })} className="size-5 shrink-0 accent-brand-500" />
           </label>
           <div className="space-y-2 text-sm">

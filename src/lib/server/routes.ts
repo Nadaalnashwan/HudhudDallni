@@ -61,7 +61,7 @@ function arabicStep(s: OsrmStep): string | null {
 async function osrmRoute(points: LatLng[], withSteps: boolean): Promise<RouteResult> {
   const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(";");
   const url = `${OSRM}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=${withSteps}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { "User-Agent": "HudhudDallni-prototype" } });
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { "User-Agent": "HudhudMishwarak-prototype" } });
   const data = (await res.json()) as { code: string; message?: string; routes?: OsrmRoute[] };
   if (!res.ok || data.code !== "Ok" || !data.routes?.[0]) throw new Error(data.message || data.code || `OSRM ${res.status}`);
   const r = data.routes[0];

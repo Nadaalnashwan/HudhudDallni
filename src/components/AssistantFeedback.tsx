@@ -1,7 +1,7 @@
 "use client";
 import { BarChart3, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { loadDallniStats, saveAssistantFeedback, type AssistantFeedback, type DallniStats } from "@/lib/store";
+import { loadAssistantStats, saveAssistantFeedback, type AssistantFeedback, type AssistantStats } from "@/lib/store";
 import { Spinner } from "./ui";
 
 const IMPROVEMENTS: { value: AssistantFeedback["improvements"][number]; label: string }[] = [
@@ -30,8 +30,8 @@ function Choice<T extends string>({ value, options, onChange }: { value?: T; opt
   );
 }
 
-/** Feedback about Dallni itself — stored in hudhud_demo.assistant_feedback, never as a place review. */
-export default function DallniFeedback({ planId, onDone }: { planId?: string; onDone: (message?: string) => void }) {
+/** Feedback about Mishwarak itself — stored in hudhud_demo.assistant_feedback, never as a place review. */
+export default function AssistantFeedbackSheet({ planId, onDone }: { planId?: string; onDone: (message?: string) => void }) {
   const [helpful, setHelpful] = useState<AssistantFeedback["helpful"]>();
   const [usedPlace, setUsedPlace] = useState<AssistantFeedback["usedPlace"]>();
   const [improvements, setImprovements] = useState<AssistantFeedback["improvements"]>([]);
@@ -40,7 +40,7 @@ export default function DallniFeedback({ planId, onDone }: { planId?: string; on
   const submit = async () => {
     setSaving(true);
     const where = await saveAssistantFeedback({ helpful: helpful!, usedPlace: usedPlace!, improvements }, planId);
-    onDone(where === "supabase" ? "شكراً على رأيك في دلّني! 🙏" : "شكراً على رأيك! انحفظ على جهازك.");
+    onDone(where === "supabase" ? "شكراً على رأيك في Mishwarak! 🙏" : "شكراً على رأيك! انحفظ على جهازك.");
   };
 
   return (
@@ -48,23 +48,23 @@ export default function DallniFeedback({ planId, onDone }: { planId?: string; on
       <div className="w-full space-y-4 rounded-t-3xl border border-line bg-surface p-5 md:max-w-md md:rounded-3xl">
         <div className="flex items-center justify-between">
           <p className="inline-flex items-center gap-1.5 font-bold">
-            <Sparkles className="size-4 text-brand-600" aria-hidden /> رأيك في دلّني
+            <Sparkles className="size-4 text-brand-600" aria-hidden /> رأيك في Mishwarak
           </p>
           <button onClick={() => onDone()} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="تخطي">
             <X className="size-4" />
           </button>
         </div>
         <div className="space-y-2">
-          <p>هل ساعدك دلّني في اختيار المكان أو تخطيط طلعتك؟</p>
+          <p>هل ساعدك Mishwarak في اختيار المكان أو تخطيط طلعتك؟</p>
           <Choice value={helpful} onChange={setHelpful} options={[{ value: "yes", label: "نعم" }, { value: "partly", label: "جزئيًا" }, { value: "no", label: "لا" }]} />
         </div>
         <div className="space-y-2">
-          <p>هل استخدمت أحد الأماكن اللي اقترحها لك دلّني؟</p>
+          <p>هل استخدمت أحد الأماكن اللي اقترحها لك Mishwarak؟</p>
           <Choice value={usedPlace} onChange={setUsedPlace} options={[{ value: "yes", label: "نعم" }, { value: "no", label: "لا" }, { value: "not_yet", label: "لسه ما رحت" }]} />
         </div>
         <div className="space-y-2">
           <p>
-            وش ممكن نحسن في دلّني؟ <span className="text-xs text-muted">(اختياري)</span>
+            وش ممكن نحسن في Mishwarak؟ <span className="text-xs text-muted">(اختياري)</span>
           </p>
           <div className="flex flex-wrap gap-2">
             {IMPROVEMENTS.map((o) => {
@@ -82,7 +82,7 @@ export default function DallniFeedback({ planId, onDone }: { planId?: string; on
             })}
           </div>
         </div>
-        <p className="text-[11px] text-muted">رأيك هنا عن دلّني نفسه، ما ينشر كتقييم لأي مكان، ويبقى خاص فيك.</p>
+        <p className="text-[11px] text-muted">رأيك هنا عن Mishwarak نفسه، ما ينشر كتقييم لأي مكان، ويبقى خاص فيك.</p>
         <div className="flex gap-2">
           <button disabled={!helpful || !usedPlace || saving} onClick={submit} className="flex-1 rounded-xl bg-brand-500 py-2 text-white disabled:opacity-40">
             {saving ? <Spinner /> : "إرسال"}
@@ -99,10 +99,10 @@ export default function DallniFeedback({ planId, onDone }: { planId?: string; on
 const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "—");
 
 /** Lightweight evaluation view from real stored data — aggregates only. */
-export function DallniStatsSheet({ onClose }: { onClose: () => void }) {
-  const [stats, setStats] = useState<DallniStats | null | undefined>(undefined);
+export function AssistantStatsSheet({ onClose }: { onClose: () => void }) {
+  const [stats, setStats] = useState<AssistantStats | null | undefined>(undefined);
   useEffect(() => {
-    loadDallniStats().then(setStats);
+    loadAssistantStats().then(setStats);
   }, []);
   const top = stats ? Object.entries(stats.improvements).sort((a, b) => b[1] - a[1]) : [];
   const card = "rounded-xl bg-background p-3 text-center";
@@ -111,7 +111,7 @@ export function DallniStatsSheet({ onClose }: { onClose: () => void }) {
       <div onClick={(e) => e.stopPropagation()} className="w-full space-y-3 rounded-t-3xl border border-line bg-surface p-5 md:max-w-md md:rounded-3xl">
         <div className="flex items-center justify-between">
           <h2 className="inline-flex items-center gap-2 text-lg font-bold">
-            <BarChart3 className="size-5 text-brand-600" aria-hidden /> مؤشرات دلّني
+            <BarChart3 className="size-5 text-brand-600" aria-hidden /> مؤشرات Mishwarak
           </h2>
           <button onClick={onClose} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="إغلاق">
             <X className="size-4" />
@@ -126,11 +126,11 @@ export function DallniStatsSheet({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 gap-2">
               <div className={card}>
                 <p className="text-2xl font-bold">{stats.plans_started}</p>
-                <p className="text-xs text-muted">طلعات بدأت بمساعدة دلّني</p>
+                <p className="text-xs text-muted">طلعات بدأت بمساعدة Mishwarak</p>
               </div>
               <div className={card}>
                 <p className="text-2xl font-bold">{stats.responses}</p>
-                <p className="text-xs text-muted">ردود على تقييم دلّني</p>
+                <p className="text-xs text-muted">ردود على تقييم Mishwarak</p>
               </div>
               <div className={card}>
                 <p className="text-2xl font-bold">{pct(stats.helpful_yes, stats.responses)}</p>

@@ -17,6 +17,15 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white">
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20RLS-3ECF8E?logo=supabase&logoColor=white">
   <img alt="Google Gemini" src="https://img.shields.io/badge/Google-Gemini-4285F4?logo=google&logoColor=white">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue"></a>
+</p>
+
+<p align="center">
+  <a href="https://hudhud-dallni.vercel.app"><strong>Try the live demo →</strong></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/demo.webp" alt="Dallni turning one Arabic request into a three-stop plan, then replacing the café on request" width="800">
 </p>
 
 ---
@@ -34,6 +43,13 @@
 Dallni turns that message into an ordered plan on the map. Each stop is chosen near the previous one, with a short reason for the pick. The user can refine the plan in conversation, start an in-app trip, and afterwards publish an AI-drafted review, but only if they consent.
 
 This repository contains the working prototype built for the *AI Feature Innovation Project*. The interface is in Arabic and right-to-left, as it would ship to Hudhud's users.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/plan-dark.webp">
+  <img src="docs/screenshots/plan-light.webp" alt="A three-stop outing plan (gym, café, burger restaurant) drawn as a road route on the map, with the plan cards in the assistant panel">
+</picture>
+
+The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it uses the offline demo dataset and the rule-based dialect parser, and it labels both in the interface.
 
 > [!NOTE]
 > Dallni is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
@@ -100,7 +116,7 @@ Every external service is optional. The app always tells the user which mode it 
 
 ### Prerequisites
 
-- Node.js 20 or newer
+- Node.js 22.12 or newer (the repository pins Node 24 in [`.nvmrc`](.nvmrc))
 - npm
 
 ### Install and run
@@ -123,6 +139,12 @@ Open <http://localhost:3000>. With no keys at all, the app runs fully in demo mo
 | `npm run build` | Create a production build |
 | `npm run start` | Serve the production build |
 | `npm run lint` | Run ESLint |
+| `npm run typecheck` | Type-check the project with `tsc` |
+| `npm test` | Run the unit tests (Vitest) |
+
+### Tests
+
+The unit tests cover the two parts of the app that decide what the user sees: the rule-based dialect parser ([`intent.test.ts`](src/lib/intent.test.ts)) and the stop planner ([`planner.test.ts`](src/lib/server/planner.test.ts)). They always run against the offline demo dataset, so they need no keys or network access. [GitHub Actions](.github/workflows/ci.yml) runs lint, typecheck, tests, and a production build on every push and pull request.
 
 ## Configuration
 
@@ -140,6 +162,12 @@ All variables are optional and go in `.env.local`, which git ignores. [`.env.exa
 | `OSRM_URL` | Server | OSRM server (default: the public demo server, `router.project-osrm.org`) |
 
 **Gemini failover policy.** Transient failures (5xx, timeouts, network errors) are retried with the next key, up to three attempts within 20 seconds. Invalid keys are skipped for the rest of the process. A quota error (429) pauses Gemini for the retry delay Google returns, and the rule-based parser takes over. Keys are never rotated to get around a quota.
+
+## Deployment
+
+The app is a standard Next.js project and deploys to [Vercel](https://vercel.com) without extra configuration. Add any variables from the table above in the project's environment settings. Keep Gemini and `GOOGLE_MAPS_API_KEY` as server-side variables. Anything you leave unset falls back to demo mode, which is how the [live demo](https://hudhud-dallni.vercel.app) runs.
+
+For real traffic, point `OSRM_URL` at your own OSRM server or configure the Google Routes API, because the public OSRM demo server is not meant for production use.
 
 ## Database
 
@@ -186,7 +214,7 @@ src/
 │   └── map/                    MapView, Leaflet and Google Maps implementations
 └── lib/
     ├── catalog.ts              Category, subcategory, tag, and district taxonomy
-    ├── intent.ts               Rule-based Saudi-dialect parser
+    ├── intent.ts               Rule-based Saudi-dialect parser (tested in intent.test.ts)
     ├── store.ts                Anonymous auth, preferences, plans, visits, reviews
     ├── supabase.ts             Supabase client configuration
     ├── feedback.ts             Feedback reasons and preference merging
@@ -195,7 +223,7 @@ src/
     ├── types.ts                Shared domain types
     └── server/                 Server-only modules
         ├── gemini.ts           Gemini client with key failover and quota handling
-        ├── planner.ts          Deterministic stop selection and ranking
+        ├── planner.ts          Deterministic stop selection and ranking (tested in planner.test.ts)
         ├── places.ts           Place source selection (Supabase, Google, demo)
         ├── supabasePlaces.ts   Place queries against hudhud_demo
         └── routes.ts           Google Routes and OSRM routing
@@ -205,6 +233,7 @@ supabase/
 public/
 ├── branding/                   Dallni logo, light and dark variants
 └── images/places/              Illustrative photos per place type (see CREDITS.md)
+docs/screenshots/               README images
 ```
 
 ## Privacy and safety
@@ -243,3 +272,9 @@ Built during a Tuwaiq Academy bootcamp as part of the *AI Feature Innovation Pro
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Road routing by [OSRM](https://project-osrm.org/).
 - Illustrative place photos from [Unsplash](https://unsplash.com); sources are listed in [`public/images/places/CREDITS.md`](public/images/places/CREDITS.md).
 - "Hudhud" and the Hudhud Maps name belong to their respective owner and are used here only to describe the concept.
+
+## License
+
+The source code is released under the [MIT License](LICENSE).
+
+The license covers the code only. The Dallni logo in [`public/branding/`](public/branding) belongs to the team and is not licensed for reuse. "Hudhud" is a trademark of its owner. The place photos remain under the [Unsplash License](https://unsplash.com/license).

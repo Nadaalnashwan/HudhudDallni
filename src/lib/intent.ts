@@ -171,7 +171,8 @@ function findDistrict(text: string): string | undefined {
 
 function findPriority(text: string): Priority | undefined {
   if (/(ما يفرق|مايفرق|اي شي|عادي|الاثنين|كلهم)/.test(text)) return "balanced";
-  if (/(الاقرب|اقرب|قريب مني|قريب لي|المسافه|مسافه)/.test(text)) return "distance";
+  // "مول قريب" asks for the closest; "قريب منه" ties one stop to the one before it.
+  if (/(الاقرب|اقرب|قريب مني|قريب لي|المسافه|مسافه)/.test(text) || /قريبه?(?!\s*من)/.test(text)) return "distance";
   if (/(تقييم|الافضل|احسن|اعلي|افضل)/.test(text)) return "rating";
   return undefined;
 }

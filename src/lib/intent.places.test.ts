@@ -72,3 +72,15 @@ describe("parseWithRules: everyday places and landmarks", () => {
     expect(steps("أبي كوفي درايف ثرو من السيارة")).toEqual([{ category: "cafe", subcategory: "drive_thru" }]);
   });
 });
+
+describe("parseWithRules: a bare «قريب»", () => {
+  it("means closest first, without asking", () => {
+    const a = parseWithRules("عطني مول قريب", empty).action;
+    expect(a).toMatchObject({ type: "plan", request: { priority: "distance", steps: [{ category: "mall" }] } });
+  });
+
+  it("still ties a stop to the one before it", () => {
+    const a = parseWithRules("كوفي وبعده مطعم قريب منه", empty).action;
+    expect(a.type).toBe("plan");
+  });
+});

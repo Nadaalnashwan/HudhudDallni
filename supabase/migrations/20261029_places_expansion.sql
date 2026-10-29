@@ -269,3 +269,10 @@ from (values
 ) as v (seed_key, name_ar, category, subcategory, neighborhood, address_ar, latitude, longitude, tags, is_demo, source, location_status, location_source)
 where not exists (select 1 from hudhud_demo.places p where p.seed_key = v.seed_key)
   and not exists (select 1 from hudhud_demo.places p where p.name_ar = v.name_ar and p.category = v.category);
+
+-- The table defaults (rating 4.0, price level 2, empty hours) would invent facts for these rows: they have no known rating, price or hours.
+UPDATE hudhud_demo.places
+SET rating = NULL, review_count = NULL, price_level = NULL, opening_hours = NULL
+WHERE (seed_key LIKE 'landmark|%'
+       OR subcategory IN ('car_wash','clothes_laundry','mosque','football','padel','primary_school','secondary_school','university','academy','metro_station','ministry'))
+  AND (rating IS NOT NULL OR review_count IS NOT NULL OR price_level IS NOT NULL OR opening_hours IS NOT NULL);

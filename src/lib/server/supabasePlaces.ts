@@ -1,15 +1,15 @@
 import "server-only";
 import { SUBCATEGORY_META } from "../catalog";
 import { getServerSupabase } from "../supabase";
-import type { Category, Place, PlaceTag, Subcategory } from "../types";
+import type { Category, LocationStatus, Place, PlaceTag, Subcategory } from "../types";
 
-/** Row shape of hudhud_demo.places. */
-type PlaceRow = {
+/** Row shape of hudhud_demo.places. Newer rows (landmarks, everyday places) leave rating, price, hours and photo NULL. */
+export type PlaceRow = {
   id: string;
   name_ar: string;
   category: string;
   subcategory: string;
-  neighborhood: string;
+  neighborhood: string | null;
   address_ar: string | null;
   latitude: number;
   longitude: number;
@@ -22,10 +22,26 @@ type PlaceRow = {
   image_url: string | null;
   is_demo: boolean | null;
   source: string | null;
+  location_status?: string | null;
+  location_source?: string | null;
 };
 
-const COLUMNS =
+const LEGACY_COLUMNS =
   "id,name_ar,category,subcategory,neighborhood,address_ar,latitude,longitude,rating,review_count,price_level,tags,amenities,opening_hours,image_url,is_demo,source";
+const COLUMNS = `${LEGACY_COLUMNS},location_status,location_source`;
+// Until the location_status migration is applied, PostgREST rejects the new columns (42703).
+let columns = COLUMNS;
+
+async function select<T>(run: (cols: string) => PromiseLike<{ data: T; error: { code?: string; message: string } | null }>) {
+  const res = await run(columns);
+  if (res.error?.code === "42703" && columns !== LEGACY_COLUMNS) {
+    columns = LEGACY_COLUMNS;
+    return run(columns);
+  }
+  return res;
+}
+
+const LOCATION_STATUSES: LocationStatus[] = ["verified", "approximate", "synthetic"];
 
 export class PlacesUnavailableError extends Error {}
 
@@ -39,26 +55,38 @@ function tagsFrom(r: PlaceRow): PlaceTag[] {
   return [...t];
 }
 
-function toPlace(r: PlaceRow): Place {
+/** A finite, positive number, or undefined — NULL, "", 0 and NaN mean "no data". */
+const positive = (v: number | string | null | undefined) => {
+  const n = v == null || v === "" ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+export function toPlace(r: PlaceRow): Place {
   const sub = r.subcategory in SUBCATEGORY_META ? (r.subcategory as Subcategory) : undefined;
   const h = r.opening_hours;
+  const district = r.neighborhood?.trim() || undefined;
+  const isDemo = r.is_demo !== false;
+  const status = LOCATION_STATUSES.find((s) => s === r.location_status);
   return {
     id: r.id,
     name: r.name_ar.replace(" (تجريبي)", "").replace(/^تجريبي\s*-\s*/, ""),
     category: r.category as Category,
     subcategory: sub,
     location: { lat: r.latitude, lng: r.longitude },
-    address: r.address_ar ?? `حي ${r.neighborhood}، الرياض`,
-    district: r.neighborhood,
-    rating: r.rating == null ? undefined : Number(r.rating),
-    ratingCount: r.review_count ?? undefined,
-    priceLevel: r.price_level ?? undefined,
-    photoUrl: r.image_url ?? undefined,
+    address: r.address_ar?.trim() || (district ? `حي ${district}، الرياض` : "الرياض"),
+    district,
+    rating: positive(r.rating),
+    ratingCount: positive(r.review_count),
+    priceLevel: positive(r.price_level),
+    photoUrl: r.image_url || undefined,
     tags: tagsFrom(r),
     labels: [...(r.tags ?? []).filter((x) => x !== "تجريبي"), ...(r.amenities ?? [])],
     hours: h?.open && h?.close ? `${h.open} – ${h.close}${h.days === "daily" ? " يومياً" : ""}` : undefined,
     source: "supabase",
-    isDemo: r.is_demo !== false,
+    isDemo,
+    // A row without a status predates the column: only demo rows existed then, so never assume "verified".
+    locationStatus: status ?? (isDemo ? "synthetic" : "approximate"),
+    locationSource: r.location_source || undefined,
   };
 }
 
@@ -74,12 +102,14 @@ export async function queryPlaces(f: { category: Category; subcategory?: Subcate
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return hit.rows;
 
-  let q = db.from("places").select(COLUMNS).eq("category", f.category);
-  if (f.subcategory) q = q.eq("subcategory", f.subcategory);
-  if (f.neighborhood) q = q.eq("neighborhood", f.neighborhood);
-  const { data, error } = await q.limit(500);
+  const { data, error } = await select((cols) => {
+    let q = db.from("places").select(cols).eq("category", f.category);
+    if (f.subcategory) q = q.eq("subcategory", f.subcategory);
+    if (f.neighborhood) q = q.eq("neighborhood", f.neighborhood);
+    return q.limit(500);
+  });
   if (error) throw new PlacesUnavailableError(`${error.code ?? ""} ${error.message}`.trim());
-  const rows = (data as PlaceRow[]).map(toPlace);
+  const rows = (data as unknown as PlaceRow[]).map(toPlace);
   cache.set(key, { at: Date.now(), rows });
   return rows;
 }
@@ -87,9 +117,9 @@ export async function queryPlaces(f: { category: Category; subcategory?: Subcate
 export async function getPlaceById(id: string): Promise<Place | null> {
   const db = getServerSupabase();
   if (!db) return null;
-  const { data, error } = await db.from("places").select(COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await select((cols) => db.from("places").select(cols).eq("id", id).maybeSingle());
   if (error) throw new PlacesUnavailableError(error.message);
-  return data ? toPlace(data as PlaceRow) : null;
+  return data ? toPlace(data as unknown as PlaceRow) : null;
 }
 
 export async function countPlaces(): Promise<number> {

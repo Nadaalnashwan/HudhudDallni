@@ -1,7 +1,7 @@
 "use client";
 import { BarChart3, ChevronLeft, CircleUserRound, Navigation, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
+import { anchorLabel, CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
 import { formatKm, formatLeg, RIYADH_CENTER } from "@/lib/geo";
 import type { IntentContext } from "@/lib/intent";
@@ -41,7 +41,7 @@ const WELCOME: ChatMessage = {
   role: "assistant",
   text: "هلا والله! أنا مشوارك، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
-const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
+const QUICK_CATEGORIES = Object.keys(CATEGORY_META) as Category[];
 const UNDO_VALUE = "تراجع";
 const UNDO_OPTIONS = [{ label: "تراجع", value: UNDO_VALUE }];
 const CHAT_CONTEXT_TURNS = 8;
@@ -205,14 +205,14 @@ export default function HudhudApp() {
   const describeChange = (before: Plan, after: Plan, changedAt: number) => {
     const parts: string[] = [];
     after.stops.forEach((s, i) => {
-      const label = "ال" + CATEGORY_META[s.step.category].label;
+      const label = anchorLabel(s.step.category, s.step.subcategory);
       if (before.stops[i]?.place.id === s.place.id) {
         if (i > changedAt)
           parts.push(s.locked ? `${label} مثبّت فما غيرته` : `${label} للحين الأنسب (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}) فخليته`);
         return;
       }
       const swapped = before.stops[i] && before.stops[i].step.category !== s.step.category;
-      parts.push(i === changedAt ? (swapped ? `حطيت ${typeLabel(s.step)} بدال ${"ال" + CATEGORY_META[before.stops[i].step.category].label}: ${s.place.name}` : `غيّرت ${label} إلى ${s.place.name}`) : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
+      parts.push(i === changedAt ? (swapped ? `حطيت ${typeLabel(s.step)} بدال ${anchorLabel(before.stops[i].step.category, before.stops[i].step.subcategory)}: ${s.place.name}` : `غيّرت ${label} إلى ${s.place.name}`) : `وعشان يكون قريب، اخترت ${label}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel})`);
     });
     const target = after.stops[changedAt];
     if (target && before.stops[changedAt]?.place.id === target.place.id)
@@ -582,7 +582,8 @@ export default function HudhudApp() {
 
       {/* Category chips over the map, as in Hudhud */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1000] space-y-2 p-3 ${panelOpen ? "md:right-[420px]" : ""}`}>
-        <div className="pointer-events-auto flex gap-2 overflow-x-auto scrollbar-none">
+        {/* one swipeable row on phones; wraps on wider screens, where a hidden scrollbar can't be dragged */}
+        <div className="pointer-events-auto flex gap-2 overflow-x-auto scrollbar-none md:flex-wrap">
           {QUICK_CATEGORIES.map((c) => (
             <button
               key={c}
@@ -653,7 +654,7 @@ export default function HudhudApp() {
             <PlaceCard
               place={focus.place}
               from={focusAnchor?.place.location ?? plan?.origin}
-              fromLabel={focusAnchor ? "ال" + CATEGORY_META[focusAnchor.step.category].label : plan?.originLabel}
+              fromLabel={focusAnchor ? anchorLabel(focusAnchor.place.category, focusAnchor.place.subcategory) : plan?.originLabel}
               reason={plan?.stops.find((s) => s.place.id === focus.place.id)?.reason}
               badge={focusedIsStop ? `الوجهة ${plan!.stops.findIndex((s) => s.place.id === focus.place.id) + 1}` : "بديل"}
               onDetails={() => setDetails(focus.place)}
@@ -837,7 +838,8 @@ const destinations = (n: number) => (n === 2 ? "وجهتين" : `${n} ${n <= 10 
 function aboutLines(config: Config | null, store: StoreStatus | null) {
   const lines: string[] = [];
   if (config?.dbError) lines.push("تعذر تحميل الأماكن حالياً");
-  else if (config?.places === "supabase") lines.push(`${config.placesCount?.toLocaleString("en-US") ?? ""} مكان تجريبي في الرياض`.trim());
+  else if (config?.places === "supabase")
+    lines.push(config.placesCount ? `${config.placesCount.toLocaleString("en-US")} مكان في الرياض، والتجريبي منها معلّم` : "أماكن في الرياض، والتجريبي منها معلّم");
   else if (config?.places === "demo") lines.push("أماكن تجريبية محفوظة داخل التطبيق");
   if (config) lines.push(config.ai === "gemini" ? "يفهم طلباتك بالذكاء الاصطناعي" : "يفهم طلباتك بالفهم الأساسي");
   if (store) lines.push(store.mode === "supabase" ? "تقييماتك وتفضيلاتك محفوظة لك بشكل خاص" : "تقييماتك وتفضيلاتك محفوظة على جهازك");

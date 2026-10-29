@@ -46,10 +46,10 @@ This repository contains the working prototype built for the *AI Feature Innovat
   <img src="docs/screenshots/plan-light.webp" alt="A three-stop outing plan (gym, café, burger restaurant) drawn as a road route on the map, with the plan cards in the assistant panel">
 </picture>
 
-The [live demo](https://hudhud-mishwarak.vercel.app) runs on the Supabase database (420 synthetic places) with Gemini for dialect understanding. Settings (الإعدادات) shows which sources are live.
+The [live demo](https://hudhud-mishwarak.vercel.app) runs on the Supabase database (synthetic demo places plus real Riyadh landmarks) with Gemini for dialect understanding. Settings (الإعدادات) shows which sources are live.
 
 > [!NOTE]
-> Mishwarak is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
+> Mishwarak is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. Most place data in the demo database is synthetic and labelled as such in the app. Real landmarks (universities, metro stations, malls, ministries) carry coordinates from OpenStreetMap, or are marked as approximate, and have no ratings, prices, or opening hours.
 
 ## Features
 
@@ -168,7 +168,7 @@ For real traffic, point `OSRM_URL` at your own OSRM server or configure the Goog
 
 ## Database
 
-The app reads and writes the `hudhud_demo` schema of a Supabase project. The seed holds 420 synthetic places: 21 subcategories × 10 Riyadh districts × 2. Every private table is owned by `auth.uid()` and protected by row-level security. The browser only ever holds the publishable key.
+The app reads and writes the `hudhud_demo` schema of a Supabase project. Each place row has a category and subcategory, and a `location_status` (`verified`, `approximate`, or `synthetic`) with its `location_source`. Synthetic rows (`is_demo = true`) cover cafés, restaurants, gyms, desserts, parks, malls, entertainment, laundries, mosques, sports fields, and schools. Real landmarks cover universities, academies, metro stations, malls, and ministries. The app reads the current place count from the database (`/api/config`), so it never hard-codes it. Every private table is owned by `auth.uid()` and protected by row-level security. The browser only ever holds the publishable key.
 
 Setup steps, the access model, and validation queries are in [`supabase/README.md`](supabase/README.md).
 
@@ -212,6 +212,7 @@ src/
 └── lib/
     ├── catalog.ts              Category, subcategory, tag, and district taxonomy
     ├── intent.ts               Rule-based Saudi-dialect parser (tested in intent.test.ts)
+    ├── arabic.ts               Arabic name normalization for named-place lookups
     ├── store.ts                Anonymous auth, preferences, plans, visits, reviews
     ├── supabase.ts             Supabase client configuration
     ├── feedback.ts             Feedback reasons and preference merging

@@ -1,11 +1,11 @@
 "use client";
-import { Car, CircleAlert, CircleX, ListOrdered, MapPin, RotateCw, X } from "lucide-react";
+import { Car, CircleAlert, CircleX, ListOrdered, MapPin, MapPinned, RotateCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DISTRICTS } from "@/lib/catalog";
 import { formatKm, formatMinutes, haversineKm } from "@/lib/geo";
 import type { LatLng, Place, RouteResult } from "@/lib/types";
 import { DirectionsIcon } from "./icons";
-import { Spinner } from "./ui";
+import { locationText, Spinner } from "./ui";
 
 type TripPhase = "locating" | "need_origin" | "routing" | "navigating" | "feedback" | "next_prompt" | "done";
 
@@ -119,6 +119,9 @@ export function TripPanel({ api, onCancel }: { api: Api; onCancel: () => void })
   const multi = trip.stops.length > 1;
   const r = trip.route;
   const remaining = trip.userPos ? haversineKm(trip.userPos, dest.location) * 1000 : undefined;
+  // a synthetic or approximate point is never presented as a real, exact destination
+  const loc = locationText(dest);
+  const nextLoc = trip.index < trip.stops.length - 1 ? locationText(trip.stops[trip.index + 1]) : null;
 
   return (
     <div className="pointer-events-auto w-full space-y-3 rounded-2xl border border-line bg-surface p-4 shadow-xl">
@@ -133,6 +136,12 @@ export function TripPanel({ api, onCancel }: { api: Api; onCancel: () => void })
           <X className="size-4" />
         </button>
       </div>
+
+      {loc?.warn && trip.phase !== "next_prompt" && (
+        <p role="note" className="flex items-center gap-1.5 rounded-lg bg-amber-100 p-2 text-xs font-medium text-amber-900">
+          <MapPinned className="size-3.5 shrink-0" aria-hidden /> {loc.label}
+        </p>
+      )}
 
       {(trip.phase === "locating" || trip.phase === "routing") && (
         <p className="flex items-center gap-2 text-sm text-muted">
@@ -215,6 +224,7 @@ export function TripPanel({ api, onCancel }: { api: Api; onCancel: () => void })
         <div className="space-y-2 text-sm">
           <p>
             الوجهة التالية: <b>{trip.stops[trip.index + 1].name}</b>
+            {nextLoc?.warn && <span className="text-xs text-amber-900"> ({nextLoc.short})</span>}
           </p>
           <button onClick={api.next} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-500 py-2.5 font-bold text-white hover:bg-brand-600">
             <DirectionsIcon className="size-5" /> ابدأ رحلتك للوجهة التالية

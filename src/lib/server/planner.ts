@@ -1,5 +1,6 @@
 import "server-only";
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { nameMatches, nameMatchScore } from "../arabic";
+import { anchorLabel, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { formatKm, haversineKm } from "../geo";
 import type { LatLng, Place, PlaceTag, PlanStop, Preferences, Priority, StepSpec } from "../types";
 import { placesMode, searchPlaces } from "./places";
@@ -33,7 +34,7 @@ const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
   balanced: { prox: 0.4, rating: 0.4 },
 };
 
-const anchorName = (place: Place) => "ال" + CATEGORY_META[place.category].label;
+const anchorName = (place: Place) => anchorLabel(place.category, place.subcategory);
 
 const learned = (input: BuildInput) => (input.preferences?.consent ? input.preferences : undefined);
 
@@ -65,7 +66,7 @@ function score(p: Place, anchor: LatLng, step: StepSpec, wanted: PlaceTag[], inp
 /** Human-readable "why this place" — only claims what the data supports. */
 function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number, wanted: PlaceTag[], input: BuildInput) {
   const parts: string[] = [];
-  if (step.placeName) parts.push("اخترته أنت");
+  if (step.placeName && nameMatches(p.name, step.placeName)) parts.push("اخترته أنت");
   if (step.subcategory) parts.push(SUBCATEGORY_META[step.subcategory].label);
   parts.push(`يبعد تقريباً ${formatKm(distKm)} عن ${anchorLabel}`);
   if (p.rating) parts.push(`تقييمه ${p.rating}${p.ratingCount ? ` (${p.ratingCount.toLocaleString("en-US")})` : ""}`);
@@ -118,8 +119,11 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     const fallbackOnly = !kept && !eligible.length && fallback && !used.has(fallback.place.id);
     const step = fallbackOnly ? fallback.step : input.steps[i];
     const wanted = wantedTags(step, input);
-    // "قريب من اللي قبله": keep each hop short when the data allows it.
-    if (!step.placeName) {
+    // A place the user named is wanted wherever it is; otherwise ("قريب من اللي قبله") keep each hop short.
+    // Google already searched by that name, so its results are never narrowed by distance.
+    const named = step.placeName ? eligible.filter((p) => nameMatches(p.name, step.placeName!)) : [];
+    if (named.length) eligible = named;
+    else if (!step.placeName || placesMode() !== "google") {
       for (const km of prev ? [3, 6, 12] : [6, 12]) {
         const near = eligible.filter((p) => haversineKm(anchor, p.location) <= km);
         if (near.length >= 2) {
@@ -128,7 +132,9 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
         }
       }
     }
-    const ranked = input.nearest?.[i]
+    const ranked = named.length
+      ? eligible.sort((a, b) => nameMatchScore(b.name, step.placeName!) - nameMatchScore(a.name, step.placeName!) || haversineKm(anchor, a.location) - haversineKm(anchor, b.location))
+      : input.nearest?.[i]
       ? eligible.sort((a, b) => haversineKm(anchor, a.location) - haversineKm(anchor, b.location))
       : eligible
           .map((p) => ({ p, s: score(p, anchor, step, wanted, input) }))

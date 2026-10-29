@@ -1,6 +1,19 @@
 export type LatLng = { lat: number; lng: number };
 
-export type Category = "cafe" | "restaurant" | "gym" | "dessert" | "park" | "mall" | "entertainment";
+export type Category =
+  | "cafe"
+  | "restaurant"
+  | "gym"
+  | "dessert"
+  | "park"
+  | "mall"
+  | "entertainment"
+  | "laundry"
+  | "mosque"
+  | "sports"
+  | "education"
+  | "transport"
+  | "government";
 
 export type Subcategory =
   | "italian"
@@ -23,7 +36,21 @@ export type Subcategory =
   | "ice_cream"
   | "public_park"
   | "shopping"
-  | "games";
+  | "games"
+  | "car_wash"
+  | "clothes_laundry"
+  | "mosque"
+  | "football"
+  | "padel"
+  | "primary_school"
+  | "secondary_school"
+  | "university"
+  | "academy"
+  | "metro_station"
+  | "ministry";
+
+/** How far a place's coordinates can be trusted: OpenStreetMap-verified, approximate, or made up for the demo. */
+export type LocationStatus = "verified" | "approximate" | "synthetic";
 
 /** Tags we only attach when the data source supports them (never assumed). */
 export type PlaceTag = "quiet" | "outdoor" | "family" | "budget" | "work" | "late";
@@ -47,6 +74,8 @@ export type Place = {
   hours?: string;
   source: "supabase" | "google" | "demo";
   isDemo: boolean; // synthetic record — always labelled in the UI
+  locationStatus: LocationStatus;
+  locationSource?: string; // e.g. "openstreetmap", "synthetic", "google"
 };
 
 export type Priority = "distance" | "rating" | "balanced";

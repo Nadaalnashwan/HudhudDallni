@@ -1,5 +1,20 @@
 "use client";
-import { mdiCoffee, mdiCupcake, mdiDirections, mdiDumbbell, mdiGamepadVariant, mdiShopping, mdiSilverwareForkKnife, mdiTree } from "@mdi/js";
+import {
+  mdiBank,
+  mdiCoffee,
+  mdiCupcake,
+  mdiDirections,
+  mdiDumbbell,
+  mdiGamepadVariant,
+  mdiMosque,
+  mdiSchool,
+  mdiShopping,
+  mdiSilverwareForkKnife,
+  mdiSoccer,
+  mdiSubwayVariant,
+  mdiTree,
+  mdiWashingMachine,
+} from "@mdi/js";
 import type { Category } from "@/lib/types";
 
 /** Filled icons, like Hudhud's category chips and pins (Material Design Icons, Apache-2.0). */
@@ -11,6 +26,12 @@ export const CATEGORY_ICON_PATH: Record<Category, string> = {
   park: mdiTree,
   mall: mdiShopping,
   entertainment: mdiGamepadVariant,
+  laundry: mdiWashingMachine,
+  mosque: mdiMosque,
+  sports: mdiSoccer,
+  education: mdiSchool,
+  transport: mdiSubwayVariant,
+  government: mdiBank,
 };
 
 function FilledIcon({ path, className }: { path: string; className: string }) {

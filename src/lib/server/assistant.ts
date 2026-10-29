@@ -39,6 +39,7 @@ INTENT واحد من: ${INTENTS.join("، ")}
 
 REQUEST = {"steps":[STEP,...],"district":"حي من القائمة أو null","priority":"distance|rating|balanced","tags":[T]}
 STEP = {"category":C,"subcategory":S أو null,"placeName":"فقط إذا سمّى مكان معين" أو null,"tags":[T]}
+أماكن بالاسم وخدمات يومية: "ودني أكاديمية طويق" ← education/academy مع placeName "طويق". "أبي وزارة التعليم" ← government/ministry مع placeName "التعليم". "جامعة الملك سعود" ← education/university مع placeName "الملك سعود". "النخيل مول" ← mall مع placeName "النخيل". "مغسلة سيارات" ← laundry/car_wash، "مصبغة" ← laundry/clothes_laundry، "جامع/مسجد" ← mosque، "ملعب كورة" ← sports/football، "بادل" ← sports/padel، "محطة مترو" ← transport/metro_station.
 
 C (الفئة): ${CATS.map((c) => `${c}=${CATEGORY_META[c].label}`).join("، ")}
 S (النوع الفرعي — لازم يتبع نفس الفئة):

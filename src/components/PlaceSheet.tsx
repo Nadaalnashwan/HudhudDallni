@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { listReviews } from "@/lib/store";
 import type { Place, Review } from "@/lib/types";
 import { DirectionsIcon } from "./icons";
-import { DemoBadge, PlacePhoto, Price, SheetHandle, Spinner, Stars, TagChips, typeLabel } from "./ui";
+import { DemoBadge, LocationNote, PlacePhoto, Price, SheetHandle, Spinner, Stars, TagChips, typeLabel } from "./ui";
 
 const EXP_LABEL = { excellent: "ممتازة", average: "عادية", bad: "سيئة" };
 const TABS = [
@@ -84,6 +84,7 @@ export default function PlaceSheet({ place, onClose, onAddToPlan, onStartTrip }:
                   <p className="flex items-center gap-1.5">
                     <MapPin className="size-4 shrink-0" aria-hidden /> {p.address}
                   </p>
+                  <LocationNote place={p} />
                   {p.hours && (
                     <p className="flex items-center gap-1.5">
                       <Clock className="size-4 shrink-0" aria-hidden /> {p.hours}
@@ -100,7 +101,7 @@ export default function PlaceSheet({ place, onClose, onAddToPlan, onStartTrip }:
                   <div className="rounded-xl bg-background p-2">
                     <p className="text-xs text-muted">{p.source === "google" ? "تقييم Google" : "التقييم الأساسي"}</p>
                     <Stars value={p.rating} size="text-lg" />
-                    <p className="text-[11px] text-muted">{(p.ratingCount ?? 0).toLocaleString("en-US")} تقييم</p>
+                    {p.rating && p.ratingCount ? <p className="text-[11px] text-muted">{p.ratingCount.toLocaleString("en-US")} تقييم</p> : null}
                   </div>
                 </div>
 
@@ -142,6 +143,7 @@ export default function PlaceSheet({ place, onClose, onAddToPlan, onStartTrip }:
                 <p className="flex items-center gap-1.5 text-muted">
                   <MapPin className="size-4 shrink-0" aria-hidden /> {p.address}
                 </p>
+                <LocationNote place={p} />
                 {p.hours && (
                   <p className="flex items-center gap-1.5 text-muted">
                     <Clock className="size-4 shrink-0" aria-hidden /> {p.hours}

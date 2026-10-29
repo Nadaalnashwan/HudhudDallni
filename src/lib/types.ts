@@ -125,6 +125,8 @@ export type Plan = {
   startedAt?: string;
   tags?: PlaceTag[]; // plan-wide tags it was built with ("هادي", "أسعار مناسبة")
   goal?: string; // the user's words that created this plan, so later edits can go back to the original idea
+  avoidTags?: PlaceTag[]; // kinds of place the user said they don't want ("ما أحب الأماكن الهادية")
+  spread?: boolean; // every stop in a different district ("كل مكان من حي")
 };
 
 export type Preferences = {
@@ -173,6 +175,8 @@ export type ConstraintEdit = {
   removeTags?: PlaceTag[];
   women?: boolean; // women-only gyms
   nearer?: boolean; // keep every hop as short as the data allows
+  avoidTags?: PlaceTag[];
+  spread?: boolean;
 };
 
 export type ParsedRequest = {
@@ -180,6 +184,8 @@ export type ParsedRequest = {
   district?: string;
   priority?: Priority;
   tags: PlaceTag[];
+  avoidTags?: PlaceTag[];
+  spread?: boolean;
 };
 
 /** Stable tastes the user stated in chat ("ما أحب الزحمة"); saved only with consent. */

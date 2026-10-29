@@ -48,6 +48,8 @@ const RequestSchema = z.object({
   district: optText,
   priority: z.enum(["distance", "rating", "balanced"]).nullish(),
   tags: strings,
+  avoidTags: strings,
+  spread: flag,
 });
 const ConstraintsSchema = z.object({
   district: optText,
@@ -56,6 +58,8 @@ const ConstraintsSchema = z.object({
   removeTags: strings,
   women: flag,
   nearer: flag,
+  avoidTags: strings,
+  spread: flag,
 });
 const LearnedSchema = z.object({
   likes: strings,
@@ -119,7 +123,9 @@ function checkRequest(r: RawRequest | null | undefined, required: boolean): Pars
     steps: steps.map(checkStep),
     district: r?.district && DISTRICTS[r.district] ? r.district : undefined,
     priority: r?.priority ?? "balanced",
-    tags: cleanTags(r?.tags),
+    tags: cleanTags(r?.tags).filter((t) => !cleanTags(r?.avoidTags).includes(t)),
+    ...(cleanTags(r?.avoidTags).length ? { avoidTags: cleanTags(r?.avoidTags) } : {}),
+    ...(r?.spread ? { spread: true } : {}),
   };
 }
 
@@ -195,6 +201,8 @@ function toActionStrict(o: GeminiOutput, ctx: IntentContext): AssistantAction {
       if (cleanTags(c?.addTags).length) edit.addTags = cleanTags(c?.addTags);
       if (cleanTags(c?.removeTags).length) edit.removeTags = cleanTags(c?.removeTags);
       if (c?.women) edit.women = true;
+      if (cleanTags(c?.avoidTags).length) edit.avoidTags = cleanTags(c?.avoidTags);
+      if (c?.spread) edit.spread = true;
       if (c?.nearer || o.nearer) edit.nearer = true;
       if (!Object.keys(edit).length) fail("empty constraint edit");
       return { type: "constraints", edit };

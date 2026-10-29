@@ -121,6 +121,12 @@ describe("reconcile: Gemini vs unambiguous rules", () => {
     expect(reconcile({ type: "regenerate" }, { type: "replace_all", includeLocked: true })).toMatchObject({ type: "replace_all", includeLocked: true });
   });
 
+  it("keeps a negation the model read as a wish", () => {
+    const rules: AssistantAction = { type: "constraints", edit: { avoidTags: ["quiet"] } };
+    expect(reconcile({ type: "constraints", edit: { addTags: ["quiet"] } }, rules)).toBe(rules);
+    expect(reconcile({ type: "replace_all" }, rules)).toBe(rules);
+  });
+
   it("otherwise trusts Gemini", () => {
     const regen: AssistantAction = { type: "regenerate", request: { steps: [{ category: "park" }], tags: [] } };
     expect(reconcile(regen, { type: "replace_all" })).toBe(regen);

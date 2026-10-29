@@ -17,8 +17,8 @@ async function makePlan(input: BuildInput = base): Promise<Plan> {
 /** Runs an edit the way the client does: plan settings + the edit's step input → planner → new plan. */
 async function apply(plan: Plan, edit: StepInput & { settings?: ReturnType<typeof settingsOf> }): Promise<Plan> {
   const { settings = settingsOf(plan), ...stepInput } = edit;
-  const stops = await buildStops({ ...stepInput, origin: settings.origin, originLabel: settings.originLabel, district: settings.district, priority: settings.priority, tags: settings.tags });
-  return { ...plan, origin: settings.origin, originLabel: settings.originLabel, district: settings.district, priority: settings.priority, tags: settings.tags, stops };
+  const stops = await buildStops({ ...stepInput, origin: settings.origin, originLabel: settings.originLabel, district: settings.district, priority: settings.priority, tags: settings.tags, avoidTags: settings.avoidTags, spread: settings.spread });
+  return { ...plan, origin: settings.origin, originLabel: settings.originLabel, district: settings.district, priority: settings.priority, tags: settings.tags, avoidTags: settings.avoidTags, spread: settings.spread, stops };
 }
 
 const ids = (p: Plan) => p.stops.map((s) => s.place.id);
@@ -203,5 +203,30 @@ describe("edit plan constraints", () => {
     const d = describeConstraintChange(plan, plan, { addTags: ["budget"] });
     expect(d.changed).toBe(false);
     expect(d.text).not.toContain("عدّلت");
+  });
+});
+
+describe("plan-wide «don't want» and «different districts»", () => {
+  it("«ما أحب الأماكن الهادية» replaces every quiet place and keeps them out", async () => {
+    const plan = await makePlan({ ...base, steps: [{ category: "cafe", subcategory: "quiet" }, { category: "restaurant" }], tags: ["quiet"] });
+    expect(plan.stops[0].place.subcategory).toBe("quiet");
+    const next = await apply(plan, constraintsInput(plan, { avoidTags: ["quiet"] }));
+    expect(next.tags).not.toContain("quiet");
+    expect(next.avoidTags).toEqual(["quiet"]);
+    for (const s of next.stops) {
+      expect(s.place.subcategory).not.toBe("quiet");
+      expect(s.place.tags).not.toContain("quiet");
+    }
+    // later edits keep honouring it
+    const again = await apply(next, replaceAllInput(next));
+    for (const s of again.stops) expect(s.place.tags).not.toContain("quiet");
+  });
+
+  it("puts every stop in a different district when asked", async () => {
+    const plan = await makePlan({ ...base, steps: [{ category: "cafe" }, { category: "restaurant" }, { category: "dessert" }] });
+    const next = await apply(plan, constraintsInput(plan, { spread: true }));
+    const districts = next.stops.map((s) => s.place.district);
+    expect(next.stops).toHaveLength(3);
+    expect(new Set(districts).size).toBe(3);
   });
 });

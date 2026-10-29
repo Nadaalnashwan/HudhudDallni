@@ -24,9 +24,24 @@ export type StepInput = {
 };
 
 /** Plan-wide settings an edit may change. */
-export type PlanSettings = { origin: LatLng; originLabel: string; district?: string; priority: Priority; tags: PlaceTag[] };
+export type PlanSettings = { origin: LatLng; originLabel: string; district?: string; priority: Priority; tags: PlaceTag[]; avoidTags?: PlaceTag[]; spread?: boolean };
 
-export const settingsOf = (p: Plan): PlanSettings => ({ origin: p.origin, originLabel: p.originLabel, district: p.district, priority: p.priority, tags: p.tags ?? [] });
+export const settingsOf = (p: Plan): PlanSettings => ({
+  origin: p.origin,
+  originLabel: p.originLabel,
+  district: p.district,
+  priority: p.priority,
+  tags: p.tags ?? [],
+  avoidTags: p.avoidTags,
+  spread: p.spread,
+});
+
+/** A step that asks for a kind of place the user now avoids ("كوفي هادي") falls back to another type. */
+const without = (step: StepSpec, avoidTags: PlaceTag[]): StepSpec => {
+  const tags = step.tags?.filter((t) => !avoidTags.includes(t));
+  const s = { ...step, tags };
+  return s.subcategory && (avoidTags as string[]).includes(s.subcategory) ? varied({ ...s, subcategory: undefined }, step.subcategory) : s;
+};
 
 const uniq = <T,>(l: T[]) => [...new Set(l)];
 
@@ -90,12 +105,14 @@ function varied(step: StepSpec, current?: Subcategory): StepSpec {
 export function regenerateInput(plan: Plan, request: ParsedRequest | undefined, o: { includeLocked?: boolean; rejected?: string[]; seen?: string[] } = {}): StepInput & { settings: PlanSettings } {
   const base = settingsOf(plan);
   const req = request ?? { steps: plan.stops.map((s) => varied(s.step, s.place.subcategory)), district: plan.district, priority: plan.priority, tags: base.tags };
-  const tags = uniq(req.tags ?? []);
+  const avoidTags = uniq([...(base.avoidTags ?? []), ...(request?.avoidTags ?? [])]);
+  const tags = uniq(req.tags ?? []).filter((t) => !avoidTags.includes(t));
   const district = req.district && DISTRICTS[req.district] ? req.district : undefined;
+  const spread = request?.spread ?? base.spread;
   const settings: PlanSettings = district
-    ? { origin: DISTRICTS[district], originLabel: `حي ${district}`, district, priority: req.priority ?? base.priority, tags }
-    : { ...base, district: request ? undefined : base.district, priority: req.priority ?? base.priority, tags };
-  const steps: StepSpec[] = req.steps.slice(0, MAX_STOPS).map((s) => ({ ...s, tags: uniq([...(s.tags ?? []), ...tags]) }));
+    ? { origin: DISTRICTS[district], originLabel: `حي ${district}`, district, priority: req.priority ?? base.priority, tags, avoidTags, spread }
+    : { ...base, district: request ? undefined : base.district, priority: req.priority ?? base.priority, tags, avoidTags, spread };
+  const steps: StepSpec[] = req.steps.slice(0, MAX_STOPS).map((s) => without({ ...s, tags: uniq([...(s.tags ?? []), ...tags]) }, avoidTags));
   const keep: (Place | null)[] = steps.map(() => null);
   const locked = steps.map(() => false);
   if (!o.includeLocked) {
@@ -130,17 +147,21 @@ export function regenerateInput(plan: Plan, request: ParsedRequest | undefined, 
 /** "أرخص" / "أهدأ" / "خليها بالملقا": rebuild the unlocked stops under the edited plan-wide settings. */
 export function constraintsInput(plan: Plan, edit: ConstraintEdit, o: { rejected?: string[] } = {}): StepInput & { settings: PlanSettings } {
   const base = settingsOf(plan);
-  const tags = uniq([...base.tags, ...(edit.addTags ?? [])]).filter((t) => !edit.removeTags?.includes(t));
+  const avoidTags = uniq([...(base.avoidTags ?? []), ...(edit.avoidTags ?? [])]).filter((t) => !edit.addTags?.includes(t));
+  const drop = [...(edit.removeTags ?? []), ...avoidTags];
+  const tags = uniq([...base.tags, ...(edit.addTags ?? [])]).filter((t) => !drop.includes(t));
   const district = edit.district && DISTRICTS[edit.district] ? edit.district : undefined;
   const settings: PlanSettings = {
     ...base,
     ...(district ? { origin: DISTRICTS[district], originLabel: `حي ${district}`, district } : {}),
     priority: edit.nearer ? "distance" : edit.priority ?? base.priority,
     tags,
+    avoidTags,
+    spread: edit.spread ?? base.spread,
   };
   const steps = plan.stops.map((s) => {
     if (s.locked) return s.step;
-    const st: StepSpec = { ...s.step, tags: uniq([...(s.step.tags ?? []), ...(edit.addTags ?? [])]).filter((t) => !edit.removeTags?.includes(t)) };
+    const st: StepSpec = without({ ...s.step, tags: uniq([...(s.step.tags ?? []), ...(edit.addTags ?? [])]).filter((t) => !edit.removeTags?.includes(t)) }, avoidTags);
     if (edit.women && st.category === "gym") st.subcategory = "women";
     return st;
   });
@@ -162,6 +183,8 @@ export function describeEdit(edit: ConstraintEdit) {
   if (edit.nearer || edit.priority === "distance") parts.push("أقرب");
   else if (edit.priority === "rating") parts.push("أعلى تقييم");
   for (const t of edit.addTags ?? []) parts.push(t === "budget" ? "أرخص" : t === "quiet" ? "أهدأ" : TAG_LABELS[t]);
+  for (const t of edit.avoidTags ?? []) parts.push(`بدون «${TAG_LABELS[t]}»`);
+  if (edit.spread) parts.push("كل مكان بحي مختلف");
   if (edit.women) parts.push("نادي نسائي");
   if (edit.district) parts.push(`حي ${edit.district}`);
   return parts.join("، ");

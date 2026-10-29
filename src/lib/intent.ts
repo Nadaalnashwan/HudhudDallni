@@ -1,4 +1,4 @@
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf } from "./catalog";
+import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
 import { RIYADH_CENTER } from "./geo";
 import type { AssistantResponse, Category, ConstraintEdit, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
@@ -158,9 +158,20 @@ function findSubcategory(segment: string, category: Category): Subcategory | und
   return best?.s;
 }
 
-function findTags(text: string): PlaceTag[] {
-  return (Object.keys(TAG_WORDS) as PlaceTag[]).filter((t) => TAG_WORDS[t].some((w) => text.includes(normalize(w))));
+/** "ما أحب الأماكن الهادية"، "بدون مكان هادي": a tag word right after a negation is something to avoid. */
+const NEGATION = "(^|\\s)(ما|مو|مب|لا|بدون|اكره|مابي|ماابي|ماحب|مااحب|مابغي|ماني)\\s+(\\S+\\s+){0,2}\\S*";
+function negatedTags(text: string): PlaceTag[] {
+  return (Object.keys(TAG_WORDS) as PlaceTag[]).filter((t) => TAG_WORDS[t].some((w) => new RegExp(NEGATION + normalize(w)).test(text)));
 }
+
+function findTags(text: string): PlaceTag[] {
+  const avoided = negatedTags(text);
+  return (Object.keys(TAG_WORDS) as PlaceTag[]).filter((t) => !avoided.includes(t) && TAG_WORDS[t].some((w) => text.includes(normalize(w))));
+}
+
+/** "كل مكان من حي"، "من أحياء مختلفة"، "مو كلها من نفس الحي". */
+const SPREAD =
+  /(^|\s)(ال)?(حي|احياء)\s*(مختلف|مختلفه|ثاني|ثانيه|غير|متفرق|متفرقه)|(مختلف|مختلفه|متفرق|متفرقه|مختلفين)\s*(ال)?(حي|احياء)|كل\s*(واحد|وحده|مكان|محطه)\s*(من|في|ب)\s*حي|(مو|مب|ما|لا)\s*(تكون\s*)?(كلها\s*)?(من|في|ب)\s*نفس\s*(ال)?حي|different (neighbou?rhoods?|districts?|areas?)/;
 
 function findDistrict(text: string): string | undefined {
   return Object.keys(DISTRICTS).find((d) => {
@@ -226,7 +237,10 @@ const DIRECTIONS: [RegExp, (lat: number, lng: number) => boolean][] = [
 /** Plan-wide corrections stated without naming a stop. */
 function constraintEdit(text: string, ctx: IntentContext): ConstraintEdit | undefined {
   const e: ConstraintEdit = {};
-  const add = (t: PlaceTag) => (e.addTags = [...new Set([...(e.addTags ?? []), t])]);
+  const avoided = negatedTags(text);
+  const add = (t: PlaceTag) => !avoided.includes(t) && (e.addTags = [...new Set([...(e.addTags ?? []), t])]);
+  if (avoided.length) e.avoidTags = avoided;
+  if (SPREAD.test(text)) e.spread = true;
   if (/(ارخص|رخيص|اقتصادي|غالي|غاليه|ميزانيه|اسعار مناسبه)/.test(text)) add("budget");
   if (/(اهدا|اهدي|هادي|هادئ|هدوء|زحمه|مزحوم)/.test(text)) add("quiet");
   if (/(عوائل|عائلي|اطفال|عيال)/.test(text)) add("family");
@@ -240,6 +254,9 @@ function constraintEdit(text: string, ctx: IntentContext): ConstraintEdit | unde
   if (district) e.district = district;
   return Object.keys(e).length ? e : undefined;
 }
+
+const describeConstraint = (e: ConstraintEdit) =>
+  [...(e.avoidTags ?? []).map((t) => `بتجنب «${TAG_LABELS[t]}»`), ...(e.spread ? ["بخلي كل مكان من حي مختلف"] : [])].join(" و") || "بعدّل الخطة";
 
 const PLAN_IDEAS = [
   { label: "نادي ← كوفي ← مطعم", value: "نادي وبعده كوفي قريب منه وبعده مطعم قريب من الكوفي" },
@@ -261,6 +278,11 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
   if (ctx.planSteps.length) {
     const named = findCategories(text).filter((c) => ctx.planSteps.some((s) => s.category === c.category));
     const includeLocked = EVEN_LOCKED.test(text);
+    // "ما أحب الأماكن الهادية" / "كل مكان من حي": a plan-wide constraint, not "replace everything"
+    if (negatedTags(text).length || SPREAD.test(text)) {
+      const edit = constraintEdit(text, ctx)!;
+      return { engine, reply: `أبشر، ${describeConstraint(edit)}.`, action: { type: "constraints", edit } };
+    }
     // B) the itinerary itself
     if (WHOLE_PLAN.test(text) || (SOMETHING_ELSE.test(text) && !named.length))
       return { engine, reply: "أبشر، بسوي لك خطة مختلفة.", action: { type: "regenerate", ...(includeLocked ? { includeLocked } : {}) } };
@@ -380,7 +402,9 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
     };
   }
 
-  const request: ParsedRequest = { steps, district, priority, tags };
+  const avoidTags = negatedTags(text);
+  if (avoidTags.length) steps = steps.map((s) => (s.subcategory && (avoidTags as string[]).includes(s.subcategory) ? { ...s, subcategory: undefined } : s));
+  const request: ParsedRequest = { steps, district, priority, tags, ...(avoidTags.length ? { avoidTags } : {}), ...(SPREAD.test(text) ? { spread: true } : {}) };
   if (steps.length === 1) {
     if (steps[0].category === "cafe" && !tags.length && !steps[0].subcategory)
       return {

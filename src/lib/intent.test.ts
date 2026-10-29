@@ -165,3 +165,35 @@ describe("parseWithRules: corrections, undo and unclear requests", () => {
     expect(parseWithRules("رجع الخطة اللي قبل", outing).action.type).toBe("chat");
   });
 });
+
+describe("parseWithRules: negation and districts", () => {
+  it("reads «ما أحب الأماكن الهادية» as something to avoid, not a wish", () => {
+    const a = parseWithRules("ما احب الاماكن الهادية", outing).action;
+    expect(a).toMatchObject({ type: "constraints", edit: { avoidTags: ["quiet"] } });
+    expect(a.type === "constraints" && a.edit.addTags?.includes("quiet")).toBeFalsy();
+  });
+
+  it("drops a negated type from a new request", () => {
+    const a = parseWithRules("ابي كوفي ما يكون هادي", empty).action;
+    const req = a.type === "plan" ? a.request : a.type === "clarify" ? a.pending : undefined;
+    expect(req?.steps?.[0]).toMatchObject({ category: "cafe" });
+    expect(req?.steps?.[0].subcategory).not.toBe("quiet");
+    expect(req?.tags ?? []).not.toContain("quiet");
+  });
+
+  it("still takes «كوفي هادي» as a wish", () => {
+    const a = parseWithRules("ابي كوفي هادي", empty).action;
+    const req = a.type === "plan" ? a.request : a.type === "clarify" ? a.pending : undefined;
+    expect(req?.avoidTags).toBeUndefined();
+    expect(req?.steps?.[0].subcategory).toBe("quiet");
+  });
+
+  it.each(["ابي كل مكان من حي", "خلها من احياء مختلفة", "مو كلها من نفس الحي", "ابي المكانين من حي مختلف"])("«%s» spreads the plan across districts", (msg) => {
+    expect(parseWithRules(msg, outing).action).toMatchObject({ type: "constraints", edit: { spread: true } });
+  });
+
+  it("carries «different districts» into a new request", () => {
+    const a = parseWithRules("ابي كوفي وبعده مطعم كل واحد من حي", empty).action;
+    expect(a).toMatchObject({ type: "plan", request: { spread: true } });
+  });
+});

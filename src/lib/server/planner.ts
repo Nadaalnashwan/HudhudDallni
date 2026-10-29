@@ -26,6 +26,10 @@ export type BuildInput = {
   seen?: string[];
   /** Same length as steps; used only when a step has no eligible candidate (e.g. "replace all" ran out of options). */
   fallback?: ({ step: StepSpec; place: Place } | null)[];
+  /** Plan-wide: kinds of place the user doesn't want (a tag or the same-named subcategory), unless a step asks for one. */
+  avoidTags?: PlaceTag[];
+  /** Every stop in a different district from the stops before it. */
+  spread?: boolean;
 };
 
 const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
@@ -86,12 +90,20 @@ function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number
  * the PREVIOUS selected stop, so changing one stop re-anchors everything after it.
  * Errors from the place source propagate (no silent fallback to other data).
  */
+/** One alternative per district first (they're already ranked), then the rest. */
+function acrossDistricts(pool: Place[], taken: Set<string>): Place[] {
+  const shown = new Set(taken);
+  const first = pool.filter((p) => p.district && !shown.has(p.district) && Boolean(shown.add(p.district)));
+  return [...first, ...pool.filter((p) => !first.includes(p))];
+}
+
 export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
   const stops: PlanStop[] = [];
   const used = new Set<string>();
   const avoid = new Set(input.avoid ?? []);
   const avoidNames = new Set(input.avoidNames ?? []);
   const seen = new Set(input.seen ?? []);
+  const districts = new Set<string>();
   const district = input.district && DISTRICTS[input.district] ? input.district : undefined;
   // Database and demo searches don't depend on the previous stop, so every step is fetched at once.
   // (Google Places searches near the previous stop, so it stays sequential.)
@@ -111,7 +123,10 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(input.steps[i], neighborhood, anchor);
 
     // A plain "نادي" means a mixed gym; women-only gyms are picked only when asked for (or nothing else is left).
-    const unwanted = (p: Place) => input.steps[i].category === "gym" && !input.steps[i].subcategory && p.subcategory === "women";
+    const asked = input.steps[i];
+    const disliked = (p: Place) => (input.avoidTags ?? []).some((t) => (p.tags.includes(t) || p.subcategory === t) && asked.subcategory !== t && !asked.tags?.includes(t));
+    const unwanted = (p: Place) =>
+      (asked.category === "gym" && !asked.subcategory && p.subcategory === "women") || disliked(p) || Boolean(input.spread && p.district && districts.has(p.district));
     const usable = (list: Place[], strict = true) =>
       list.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id && !(strict && unwanted(p)));
     let eligible = usable(candidates);
@@ -155,11 +170,12 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     const place = kept ?? pool.shift() ?? (fallbackOnly ? fallback.place : undefined);
     if (!place) continue;
     used.add(place.id);
+    if (place.district) districts.add(place.district);
     const distKm = haversineKm(anchor, place.location);
     stops.push({
       step,
       place,
-      alternatives: pool.slice(0, 4),
+      alternatives: (input.spread ? acrossDistricts(pool, districts) : pool).slice(0, 4),
       excluded,
       locked: input.locked?.[i] ?? false,
       reason: reasonFor(place, step, anchorLabel, distKm, wanted, input),

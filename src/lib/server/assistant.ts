@@ -33,7 +33,7 @@ INTENT واحد من: ${INTENTS.join("، ")}
 - replace_all_places: الأماكن نفسها ما عجبته بس نوع الطلعة نفسه (نفس الأنشطة ونفس العدد، كل وجهة غير مثبّتة تاخذ مكان جديد). أمثلة: "غيرلي الأماكن"، "مو عاجبني ولا مكان"، "طفشت من هالأماكن"، "بدلها كلها"، "ما عجبني شيء"، "show me other places". "includeLocked": true فقط إذا قال صراحة يبي حتى المثبّت يتغير ("غير كل شيء حتى النادي المثبت").
 - replace_entire_plan: الخطة نفسها (التسلسل أو الفكرة) ما عجبته: "غيرلي الخطة"، "ما عجبتني الخطة"، "لا مو كذا، سو لي خطة ثانية"، "خلنا نبدأ من جديد"، "ابي شي ثاني"، "ودي بشي مختلف"، "عطني اقتراح غير"، "different plan". حط "request" جديد مبني على originalRequest وآخر كلامه، ولازم يختلف عن currentPlan: غيّر نشاط واحد على الأقل أو نوعه الفرعي أو الترتيب (مثلاً كوفي مختص بدل الكوفي العادي، مطعم سعودي بدل البرجر، حديقة بدل المول) بشرط يخدم نفس فكرته. حافظ على القيود الصريحة اللي للحين لها معنى (الميزانية، الحي، هادي، عوائل...). المثبّت يبقى إلا إذا قال يتغير كل شيء ← "includeLocked": true.
 - replace_single_stop: وجهة وحدة: "غير الكوفي"، "بدل المطعم"، "خل النادي أقرب"، "أبي مطعم إيطالي بدل البرجر"، "بدل الحديقة بمول". الحقول: "index"، و"step" إذا تغيّر النوع أو الفئة ({"category":C,"subcategory":S أو null,"tags":[T]})، "nearer": true إذا يبيه أقرب، "onlyThis": true فقط إذا قال "بس/فقط/لحاله" (يبقى اللي بعده مثل ما هو)، وإلا false.
-- edit_plan_constraints: تصحيح على الخطة كلها بدون تسمية وجهة: "لا أبيه أقرب"، "غالي عطني أرخص"، "أبي مكان أهدأ"، "أبي أماكن تناسب البنات"، "خليها شمال الرياض". الحقل "constraints": {"district": حي من القائمة أو null، "priority": "distance|rating|balanced" أو null، "addTags":[T]، "removeTags":[T]، "women": true إذا يبي أندية نسائية، "nearer": true إذا يبي الكل أقرب}. "شمال/جنوب/شرق/غرب الرياض" ← اختر حي مناسب من القائمة. "تناسب البنات" ← women للنادي و family للباقي.
+- edit_plan_constraints: تصحيح على الخطة كلها بدون تسمية وجهة: "لا أبيه أقرب"، "غالي عطني أرخص"، "أبي مكان أهدأ"، "أبي أماكن تناسب البنات"، "خليها شمال الرياض". الحقل "constraints": {"district": حي من القائمة أو null، "priority": "distance|rating|balanced" أو null، "addTags":[T]، "removeTags":[T]، "women": true إذا يبي أندية نسائية، "nearer": true إذا يبي الكل أقرب، "avoidTags":[T] لنوع أماكن ما يبيه، "spread": true إذا يبي كل مكان من حي مختلف}. النفي مهم: "ما أحب الأماكن الهادية" ← avoidTags:["quiet"] (مو addTags). "أبي كل مكان من حي مختلف"/"مو كلها من نفس الحي" ← spread:true. وفي create_plan نفس الحقلين داخل request: "avoidTags" و "spread". "شمال/جنوب/شرق/غرب الرياض" ← اختر حي مناسب من القائمة. "تناسب البنات" ← women للنادي و family للباقي.
 - add_stop: "أضف/زيد X" ← "step": STEP، و"after": index الوجهة اللي قبلها أو null للنهاية.
 - remove_stop / lock_stop / unlock_stop: "شيل/احذف X"، "ثبت X"، "فك تثبيت X" ← "index".
 - undo_plan_change: يبي يرجع للخطة اللي قبل ("رجع الخطة اللي قبل"، "تراجع") — فقط إذا canUndo true.
@@ -118,6 +118,24 @@ export function userPayload(message: string, ctx: IntentContext, preferences?: P
  * Gemini disagrees on exactly these, the rules win.
  */
 export function reconcile(gemini: AssistantAction, rules: AssistantAction): AssistantAction {
+  // "ما أحب الأماكن الهادية": a model that read the word as a wish is overruled by the negation
+  if (rules.type === "constraints" && (rules.edit.avoidTags?.length || rules.edit.spread)) {
+    const avoid = rules.edit.avoidTags ?? [];
+    if (gemini.type !== "constraints" || gemini.edit.addTags?.some((t) => avoid.includes(t)) || (rules.edit.spread && !gemini.edit.spread)) return rules;
+  }
+  if (rules.type === "plan" && gemini.type === "plan" && (rules.request.avoidTags?.length || rules.request.spread)) {
+    const avoidTags = [...new Set([...(gemini.request.avoidTags ?? []), ...(rules.request.avoidTags ?? [])])];
+    return {
+      ...gemini,
+      request: {
+        ...gemini.request,
+        tags: gemini.request.tags.filter((t) => !avoidTags.includes(t)),
+        steps: gemini.request.steps.map((st) => (st.subcategory && (avoidTags as string[]).includes(st.subcategory) ? { ...st, subcategory: undefined } : st)),
+        ...(avoidTags.length ? { avoidTags } : {}),
+        ...(rules.request.spread || gemini.request.spread ? { spread: true } : {}),
+      },
+    };
+  }
   // "undo" would bring back an old plan while the user just asked for a new one
   if (gemini.type === "undo" && rules.type === "plan") return rules;
   // "غيرلي الخطة" is about the itinerary, "غيرلي الأماكن" about the venues

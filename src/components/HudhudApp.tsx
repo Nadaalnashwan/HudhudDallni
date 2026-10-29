@@ -64,6 +64,8 @@ type BuildArgs = {
   avoid?: string[];
   avoidNames?: string[];
   seen?: string[];
+  avoidTags?: PlaceTag[];
+  spread?: boolean;
   goal?: string; // kept on the plan, never sent to the planner
 };
 
@@ -167,7 +169,7 @@ export default function HudhudApp() {
       say({ role: "assistant", text: "ما لقيت أماكن مطابقة لطلبك في البيانات. جرب نوع أو حي ثاني." });
       return null;
     }
-    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, district: a.district, priority: a.priority, stops, route, tags: a.tags, goal };
+    const next: Plan = { id: keepId ?? uid(), origin: a.origin.loc, originLabel: a.origin.label, district: a.district, priority: a.priority, stops, route, tags: a.tags, goal, avoidTags: a.avoidTags, spread: a.spread };
     if (plan && !samePlaces(plan, next)) setUndoStack((h) => [...h, plan].slice(-HISTORY_LIMIT));
     stops.forEach((s) => shown.current.add(s.place.id));
     setPlan(next);
@@ -184,6 +186,8 @@ export default function HudhudApp() {
     priority: p.priority,
     tags: p.tags ?? tags,
     goal: p.goal,
+    avoidTags: p.avoidTags,
+    spread: p.spread,
   });
 
   const prefsNote = () => {
@@ -313,7 +317,7 @@ export default function HudhudApp() {
     const { settings = settingsOf(before), ...stepInput } = input;
     setBusy(true);
     const next = await runPlan(
-      { ...stepInput, origin: { loc: settings.origin, label: settings.originLabel }, district: settings.district, priority: settings.priority, tags: settings.tags, goal: before.goal },
+      { ...stepInput, origin: { loc: settings.origin, label: settings.originLabel }, district: settings.district, priority: settings.priority, tags: settings.tags, avoidTags: settings.avoidTags, spread: settings.spread, goal: before.goal },
       before.id,
     );
     setBusy(false);
@@ -445,7 +449,7 @@ export default function HudhudApp() {
         const steps = req.steps.map((s) => ({ ...s, tags: [...new Set([...(s.tags ?? []), ...req.tags])] }));
         setActiveCategory(steps.length === 1 ? steps[0].category : null);
         setBusy(true);
-        const p = await runPlan({ steps, origin, district, priority: defaultPriority(req.priority), tags: req.tags, goal });
+        const p = await runPlan({ steps, origin, district, priority: defaultPriority(req.priority), tags: req.tags, goal, avoidTags: req.avoidTags, spread: req.spread });
         if (p) describeNew(p);
       } else if (a.type === "modify") {
         // Edits report what the planner actually did, not what the model said it would do.

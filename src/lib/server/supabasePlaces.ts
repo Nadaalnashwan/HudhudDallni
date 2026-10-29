@@ -44,7 +44,7 @@ function toPlace(r: PlaceRow): Place {
   const h = r.opening_hours;
   return {
     id: r.id,
-    name: r.name_ar,
+    name: r.name_ar.replace(" (تجريبي)", "").replace(/^تجريبي\s*-\s*/, ""),
     category: r.category as Category,
     subcategory: sub,
     location: { lat: r.latitude, lng: r.longitude },

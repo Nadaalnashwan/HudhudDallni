@@ -1,6 +1,6 @@
 "use client";
 import { FlaskConical, Star } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CATEGORY_META, SUBCATEGORY_META, subcategoryImage, TAG_LABELS } from "@/lib/catalog";
 import type { Place } from "@/lib/types";
 import { CategoryIcon } from "./icons";
@@ -32,10 +32,15 @@ export function PlacePhoto({ place, className = "", caption = true }: { place: P
   );
 }
 
+/** Subcategories that already name the place type on their own ("قهوة مختصة", not "مقهى قهوة مختصة"). */
+const STANDALONE = new Set(["specialty_coffee", "bakery", "ice_cream", "public_park", "games"]);
+
 export const typeLabel = (p: Pick<Place, "category" | "subcategory">) =>
-  p.subcategory && !SUBCATEGORY_META[p.subcategory].label.includes(CATEGORY_META[p.category].label)
-    ? `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`
-    : CATEGORY_META[p.category].label;
+  !p.subcategory || SUBCATEGORY_META[p.subcategory].label.includes(CATEGORY_META[p.category].label)
+    ? CATEGORY_META[p.category].label
+    : STANDALONE.has(p.subcategory)
+      ? SUBCATEGORY_META[p.subcategory].label
+      : `${CATEGORY_META[p.category].label} ${SUBCATEGORY_META[p.subcategory].label}`;
 
 export function Stars({ value, size = "text-sm" }: { value?: number; size?: string }) {
   if (!value) return <span className="text-xs text-muted">بدون تقييم</span>;
@@ -64,7 +69,10 @@ export function TagChips({ place }: { place: Place }) {
 export function DemoBadge({ place }: { place: Place }) {
   if (!place.isDemo) return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+    <span
+      title="مكان من بيانات مولّدة للعرض: الاسم والموقع والتقييم ليست لمنشأة حقيقية، والصورة توضيحية."
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+    >
       <FlaskConical className="size-3" aria-hidden /> مكان تجريبي
     </span>
   );
@@ -73,6 +81,26 @@ export function DemoBadge({ place }: { place: Place }) {
 export function Price({ level }: { level?: number }) {
   if (!level) return null;
   return <span className="text-xs text-muted">{"$".repeat(level)}</span>;
+}
+
+/** Grab handle on mobile bottom sheets, like Hudhud's. A downward swipe or a tap closes the sheet. */
+export function SheetHandle({ onClose, label = "إغلاق" }: { onClose: () => void; label?: string }) {
+  const startY = useRef<number | null>(null);
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      onPointerDown={(e) => (startY.current = e.clientY)}
+      onPointerUp={(e) => {
+        if (startY.current !== null && e.clientY - startY.current > 40) onClose();
+        startY.current = null;
+      }}
+      aria-label={label}
+      className="flex w-full touch-none justify-center pb-1 pt-2 md:hidden"
+    >
+      <span className="h-1 w-10 rounded-full bg-line" />
+    </button>
+  );
 }
 
 export function Spinner() {

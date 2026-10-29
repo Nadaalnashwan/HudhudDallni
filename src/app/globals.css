@@ -97,12 +97,15 @@ html.theme-transition *::after {
 }
 
 /*
- * Dark map: the same licensed OpenStreetMap tiles, re-coloured in the browser (no third-party
- * dark tile service needed). Only the tile layer is filtered — pins, route lines, the
- * current-location dot and place photos keep their real colours.
+ * Calm, Hudhud-like map from the same licensed OpenStreetMap tiles, re-coloured in the browser
+ * (no third-party tile service or key). Only the tile layer is filtered — pins, route lines,
+ * the current-location dot and place photos keep their real colours.
  */
+.leaflet-tile-pane {
+  filter: saturate(0.25) contrast(0.9) brightness(1.04);
+}
 .dark .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.55);
+  filter: invert(1) hue-rotate(180deg) saturate(0.3) brightness(0.8) contrast(0.95) sepia(0.15) hue-rotate(160deg);
 }
 .dark .leaflet-control-attribution,
 .dark .leaflet-tooltip {

@@ -40,7 +40,7 @@ export default function DallniFeedback({ planId, onDone }: { planId?: string; on
   const submit = async () => {
     setSaving(true);
     const where = await saveAssistantFeedback({ helpful: helpful!, usedPlace: usedPlace!, improvements }, planId);
-    onDone(where === "supabase" ? "شكراً على رأيك في دلّني! 🙏" : "شكراً على رأيك! (انحفظ على جهازك — وضع تجريبي)");
+    onDone(where === "supabase" ? "شكراً على رأيك في دلّني! 🙏" : "شكراً على رأيك! انحفظ على جهازك.");
   };
 
   return (
@@ -120,7 +120,7 @@ export function DallniStatsSheet({ onClose }: { onClose: () => void }) {
         {stats === undefined ? (
           <Spinner />
         ) : stats === null ? (
-          <p className="text-sm text-muted">ما قدرنا نجيب المؤشرات من قاعدة البيانات.</p>
+          <p className="text-sm text-muted">ما قدرنا نجيب المؤشرات حالياً.</p>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-2">
@@ -157,7 +157,7 @@ export function DallniStatsSheet({ onClose }: { onClose: () => void }) {
               )}
             </div>
             <p className="text-[11px] text-muted">
-              أرقام حقيقية من قاعدة بيانات النموذج الأولي (مجمّعة فقط، بدون أي رد فردي). عدد الردود صغير — ليست نتائج تقييم نهائية.
+              أرقام حقيقية من النسخة التجريبية، مجمّعة بدون أي رد فردي. عدد الردود قليل، فهي مو نتائج نهائية.
               {stats.responses < 5 && " البيانات ما زالت قليلة جداً للاستنتاج."}
             </p>
           </>

@@ -63,7 +63,7 @@ function build(): Place[] {
         const [district, c] = districts[(i * 5 + branch * 4 + category.length) % districts.length];
         out.push({
           id: `demo-${category}-${i}-${branch}`,
-          name: `${name} (تجريبي)`,
+          name,
           category,
           subcategory,
           location: { lat: c.lat + (rand() - 0.5) * 0.03, lng: c.lng + (rand() - 0.5) * 0.03 },

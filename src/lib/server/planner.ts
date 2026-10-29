@@ -59,8 +59,8 @@ function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number
   const parts: string[] = [];
   if (step.placeName) parts.push("اخترته أنت");
   if (step.subcategory) parts.push(SUBCATEGORY_META[step.subcategory].label);
-  parts.push(`يبعد ${formatKm(distKm)} بخط مستقيم عن ${anchorLabel}`);
-  if (p.rating) parts.push(`تقييمه ${p.rating}${p.ratingCount ? ` (${p.ratingCount.toLocaleString("ar-SA")})` : ""}`);
+  parts.push(`يبعد تقريباً ${formatKm(distKm)} عن ${anchorLabel}`);
+  if (p.rating) parts.push(`تقييمه ${p.rating}${p.ratingCount ? ` (${p.ratingCount.toLocaleString("en-US")})` : ""}`);
   const prefs = learned(input);
   for (const t of wanted.filter((t) => p.tags.includes(t)))
     parts.push(prefs?.likes.includes(t) && !input.tags.includes(t) && !step.tags?.includes(t) ? `${TAG_LABELS[t]} (يناسب تفضيلاتك)` : TAG_LABELS[t]);

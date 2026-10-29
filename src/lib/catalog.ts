@@ -5,9 +5,9 @@ import type { Category, LatLng, PlaceTag, Subcategory } from "./types";
  * `subcategory` exactly, so a parsed subcategory can be used as a real DB filter.
  */
 export const CATEGORY_META: Record<Category, { label: string; plural: string; color: string; googleType: string; query: string }> = {
-  cafe: { label: "كوفي", plural: "كوفيهات", color: "#8B5E3C", googleType: "cafe", query: "كوفي" },
+  cafe: { label: "مقهى", plural: "مقاهي", color: "#8B5E3C", googleType: "cafe", query: "كوفي" },
   restaurant: { label: "مطعم", plural: "مطاعم", color: "#E4572E", googleType: "restaurant", query: "مطعم" },
-  gym: { label: "نادي", plural: "أندية", color: "#2E86AB", googleType: "gym", query: "نادي رياضي" },
+  gym: { label: "نادي", plural: "أندية رياضية", color: "#2E86AB", googleType: "gym", query: "نادي رياضي" },
   dessert: { label: "حلويات", plural: "حلويات", color: "#C2185B", googleType: "dessert_shop", query: "حلويات" },
   park: { label: "حديقة", plural: "حدائق", color: "#2E7D32", googleType: "park", query: "حديقة" },
   mall: { label: "مول", plural: "مولات", color: "#6A4C93", googleType: "shopping_mall", query: "مول" },

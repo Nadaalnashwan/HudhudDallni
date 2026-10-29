@@ -3,7 +3,7 @@ import { Lightbulb } from "lucide-react";
 import { formatKm, haversineKm } from "@/lib/geo";
 import type { LatLng, Place } from "@/lib/types";
 import { CategoryIcon } from "./icons";
-import { DemoBadge, PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
+import { PlacePhoto, Price, Stars, TagChips, typeLabel } from "./ui";
 
 type Props = {
   place: Place;
@@ -27,9 +27,9 @@ export default function PlaceCard({ place, from, fromLabel, reason, badge, selec
       className={`overflow-hidden rounded-2xl border bg-surface shadow-sm transition ${selected ? "border-brand-500 ring-2 ring-brand-100" : "border-line"} ${onSelect ? "cursor-pointer" : ""} ${compact ? "w-60 shrink-0" : ""}`}
     >
       <div className="relative">
-        <PlacePhoto place={place} className={compact ? "h-24 w-full" : "h-32 w-full"} />
+        <PlacePhoto place={place} className={compact ? "h-24 w-full" : "h-32 w-full"} caption={false} />
         {badge && <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white">{badge}</span>}
-        {place.openNow === false && <span className="absolute left-2 top-2 rounded-full bg-red-600/90 px-2 py-0.5 text-[11px] text-white">مغلق الحين</span>}
+        {place.openNow === false && <span className="absolute left-2 top-2 rounded-full bg-red-600/90 px-2 py-0.5 text-[11px] text-white">مغلق الآن</span>}
       </div>
       <div className="space-y-1.5 p-3">
         <div className="flex items-start justify-between gap-2">
@@ -42,7 +42,6 @@ export default function PlaceCard({ place, from, fromLabel, reason, badge, selec
           </span>
           <Price level={place.priceLevel} />
           {dist !== undefined && <span>• {formatKm(dist)}{fromLabel ? ` من ${fromLabel}` : ""}</span>}
-          <DemoBadge place={place} />
         </div>
         <p className="line-clamp-1 text-xs text-muted">{place.address}</p>
         {!compact && <TagChips place={place} />}

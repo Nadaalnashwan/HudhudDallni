@@ -272,7 +272,7 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
   const chain = steps.map(label).join(" ← ");
   return {
     engine,
-    reply: steps.length > 1 ? `أبشر! بخطط لك: ${chain}، وكل محطة قريبة من اللي قبلها.` : "تمام، لقيت لك هالخيارات",
+    reply: steps.length > 1 ? `أبشر! بخطط لك: ${chain}، وكل وجهة قريبة من اللي قبلها.` : "تمام، لقيت لك هالخيارات",
     action: { type: "plan", request: { ...request, priority: priority ?? "balanced" } },
   };
 }

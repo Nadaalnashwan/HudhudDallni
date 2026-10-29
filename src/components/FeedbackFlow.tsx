@@ -106,7 +106,7 @@ export default function FeedbackFlow({
   };
 
   const publishedText = (where: Review["storage"] | null) =>
-    where === "supabase" ? `نشرت تقييمك عن ${name} داخل هدهد ✅` : where === "local" ? `حفظت تقييمك عن ${name} محلياً على جهازك (وضع تجريبي) ✅` : "تمام، ما نشرت أي شي.";
+    where === "supabase" ? `نشرت تقييمك عن ${name} داخل هدهد ✅` : where === "local" ? `حفظت تقييمك عن ${name} على جهازك ✅` : "تمام، ما نشرت أي شي.";
 
   /** Nothing is written to the reviews table unless the user explicitly approves. */
   const publish = async (yes: boolean) => {
@@ -222,7 +222,7 @@ export default function FeedbackFlow({
             )}
             <p className="text-lg font-semibold">تبغى ننشر تقييمك في هدهد؟</p>
             <p className="text-xs text-muted">
-              {visit.source === "supabase" ? "ينشر داخل نسختنا من هدهد فقط، ومنفصل عن التقييم الأساسي للمكان." : "وضع تجريبي: يحفظ على جهازك فقط."} وما ينشر على Google Maps.
+              {visit.source === "supabase" ? "ينشر داخل نسختنا من هدهد فقط، ومنفصل عن التقييم الأساسي للمكان." : "يحفظ على جهازك فقط."} وما ينشر على Google Maps.
             </p>
             <div className="flex gap-2">
               <button disabled={!draft.trim() || loading} onClick={() => publish(true)} className="flex-1 rounded-xl bg-brand-500 py-2 text-white disabled:opacity-40">

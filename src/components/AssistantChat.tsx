@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, LatLng, Place } from "@/lib/types";
+import { latinDigits } from "@/lib/geo";
 import PlaceCard from "./PlaceCard";
 import { Spinner } from "./ui";
 
@@ -45,13 +46,13 @@ export default function AssistantChat({ messages, busy, disabled = busy, chosenI
                   m.role === "user" ? "rounded-br-sm bg-brand-500 text-white" : "rounded-bl-sm bg-background"
                 }`}
               >
-                {m.text}
+                {latinDigits(m.text)}
               </div>
               {m.options && idx === messages.length - 1 && (
                 <div className="flex flex-wrap gap-2">
                   {m.options.map((o) => (
                     <button key={o.label} onClick={() => submit(o.value)} className="rounded-full border border-brand-500 bg-surface px-3 py-1 text-sm text-brand-700 hover:bg-brand-50">
-                      {o.label}
+                      {latinDigits(o.label)}
                     </button>
                   ))}
                 </div>
@@ -83,7 +84,7 @@ export default function AssistantChat({ messages, busy, disabled = busy, chosenI
         {busy && (
           <div className="flex justify-end">
             <div className="flex items-center gap-2 rounded-2xl bg-background px-3 py-2 text-sm text-muted">
-              <Spinner /> هدهد يدوّر لك...
+              <Spinner /> دلّني يدوّر لك...
             </div>
           </div>
         )}

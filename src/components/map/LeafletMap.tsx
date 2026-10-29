@@ -4,9 +4,10 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
 import { CATEGORY_META } from "@/lib/catalog";
 import type { MapProps } from "./MapView";
-import { pinHtml } from "./pin";
+import { CATEGORY_ICON_PATH } from "../icons";
+import { altPinHtml, pinHtml, ROUTE_BLUE } from "./pin";
 
-export default function LeafletMap({ origin, originLabel = "موقعك", stops, alternatives, path, selectedId, onSelect, fitKey, onMapClick }: MapProps) {
+export default function LeafletMap({ origin, originLabel = "مكانك الحالي", stops, alternatives, path, selectedId, onSelect, fitKey, onMapClick }: MapProps) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -39,16 +40,16 @@ export default function LeafletMap({ origin, originLabel = "موقعك", stops, 
     const m = map.current, g = layer.current;
     if (!m || !g) return;
     g.clearLayers();
-    L.circleMarker([origin.lat, origin.lng], { radius: 8, color: "#fff", weight: 3, fillColor: "#2f80ed", fillOpacity: 1 })
+    L.circleMarker([origin.lat, origin.lng], { radius: 8, color: "#fff", weight: 3, fillColor: ROUTE_BLUE, fillOpacity: 1 })
       .bindTooltip(originLabel)
       .addTo(g);
     if (path.length > 1) {
       L.polyline(path.map((p) => [p.lat, p.lng]), { color: "#fff", weight: 9, opacity: 0.9 }).addTo(g);
-      L.polyline(path.map((p) => [p.lat, p.lng]), { color: "#12a189", weight: 5 }).addTo(g);
+      L.polyline(path.map((p) => [p.lat, p.lng]), { color: ROUTE_BLUE, weight: 5 }).addTo(g);
     }
     alternatives.forEach((p) => {
       L.marker([p.location.lat, p.location.lng], {
-        icon: L.divIcon({ className: "hh-marker", html: pinHtml("•", "#94a3b8", p.id === selectedId, true), iconSize: [26, 26], iconAnchor: [13, 26] }),
+        icon: L.divIcon({ className: "hh-marker", html: altPinHtml(p.id === selectedId), iconSize: [18, 18], iconAnchor: [9, 9] }),
       })
         .on("click", () => onSelectRef.current(p))
         .addTo(g);
@@ -56,9 +57,9 @@ export default function LeafletMap({ origin, originLabel = "موقعك", stops, 
     stops.forEach((p, i) => {
       L.marker([p.location.lat, p.location.lng], {
         zIndexOffset: 1000,
-        icon: L.divIcon({ className: "hh-marker", html: pinHtml(String(i + 1), CATEGORY_META[p.category].color, p.id === selectedId), iconSize: [36, 36], iconAnchor: [18, 36] }),
+        icon: L.divIcon({ className: "hh-marker", html: pinHtml(CATEGORY_ICON_PATH[p.category], CATEGORY_META[p.category].color, p.id === selectedId, stops.length > 1 ? i + 1 : undefined), iconSize: [36, 44], iconAnchor: [18, 44] }),
       })
-        .bindTooltip(p.name, { direction: "top", offset: [0, -34] })
+        .bindTooltip(p.name, { direction: "top", offset: [0, -42] })
         .on("click", () => onSelectRef.current(p))
         .addTo(g);
     });

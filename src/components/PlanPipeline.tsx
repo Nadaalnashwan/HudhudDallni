@@ -1,10 +1,10 @@
 "use client";
-import { Check, ChevronLeft, MapPin, Pin, PinOff, RefreshCw, Rocket, Route, X } from "lucide-react";
+import { Check, Pin, PinOff, RefreshCw, Route, X } from "lucide-react";
 import { CATEGORY_META } from "@/lib/catalog";
-import { formatKm, formatMinutes } from "@/lib/geo";
+import { formatLeg } from "@/lib/geo";
 import type { Plan } from "@/lib/types";
-import { CategoryIcon } from "./icons";
-import { PlacePhoto, Spinner, Stars, typeLabel } from "./ui";
+import { CategoryIcon, DirectionsIcon } from "./icons";
+import { PlacePhoto, Spinner, Stars } from "./ui";
 
 type Props = {
   plan: Plan;
@@ -17,11 +17,6 @@ type Props = {
   onStart: () => void;
 };
 
-/** Leg text: driving time only when Google Routes supplied it; otherwise straight-line distance. */
-function legText(meters: number, seconds?: number) {
-  return seconds ? `${formatMinutes(seconds)} قيادة • ${formatKm(meters / 1000)}` : `${formatKm(meters / 1000)} بخط مستقيم`;
-}
-
 export default function PlanPipeline({ plan, busyIndex, selectedId, onSelect, onReplace, onToggleLock, onRemove, onStart }: Props) {
   const route = plan.route;
   const btn = "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px]";
@@ -31,33 +26,24 @@ export default function PlanPipeline({ plan, busyIndex, selectedId, onSelect, on
         <h3 className="font-semibold">خطة الطلعة</h3>
         {route && (
           <span className="inline-flex items-center gap-1 text-xs text-muted">
-            <Route className="size-3.5" aria-hidden /> {legText(route.distanceMeters, route.durationSeconds)}
+            <Route className="size-3.5" aria-hidden /> {formatLeg(route.distanceMeters, route.durationSeconds)}
           </span>
         )}
       </div>
 
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs scrollbar-none">
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-blue-700">
-          <MapPin className="size-3" aria-hidden /> {plan.originLabel}
-        </span>
-        {plan.stops.map((s, i) => (
-          <span key={s.place.id} className="flex shrink-0 items-center gap-1">
-            <ChevronLeft className="size-3.5 text-muted" aria-hidden />
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-white" style={{ background: CATEGORY_META[s.step.category].color }}>
-              <CategoryIcon category={s.step.category} className="size-3" /> {i + 1}. {typeLabel({ category: s.step.category, subcategory: s.step.subcategory })}
-            </span>
-          </span>
-        ))}
-      </div>
+      <p className="flex items-center gap-2 text-sm">
+        <span className="size-3 shrink-0 rounded-full border-2 border-white bg-[#2086FF] shadow ring-1 ring-[#2086FF]/30" aria-hidden />
+        {plan.originLabel}
+      </p>
 
-      <ol className="mt-2 space-y-2">
+      <ol className="space-y-1">
         {plan.stops.map((s, i) => {
           const leg = route?.legs[i];
           return (
             <li key={s.place.id}>
               {leg && (
-                <div className="mr-5 border-r-2 border-dashed border-brand-100 py-1 pr-3 text-[11px] text-muted">
-                  {legText(leg.distanceMeters, leg.durationSeconds)} من {s.anchorLabel}
+                <div className="mr-[5px] border-r-2 border-dotted border-muted/40 py-1.5 pr-4 text-[11px] text-muted">
+                  {formatLeg(leg.distanceMeters, leg.durationSeconds)}
                 </div>
               )}
               <div
@@ -66,8 +52,8 @@ export default function PlanPipeline({ plan, busyIndex, selectedId, onSelect, on
               >
                 <div className="relative shrink-0">
                   <PlacePhoto place={s.place} className="size-16 rounded-lg" caption={false} />
-                  <span className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: CATEGORY_META[s.step.category].color }}>
-                    {i + 1}
+                  <span className="absolute -right-1.5 -top-1.5 flex size-6 items-center justify-center rounded-full border-2 border-surface text-white" style={{ background: CATEGORY_META[s.step.category].color }} aria-label={`الوجهة ${i + 1}`}>
+                    <CategoryIcon category={s.step.category} className="size-3" />
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
@@ -99,11 +85,9 @@ export default function PlanPipeline({ plan, busyIndex, selectedId, onSelect, on
         })}
       </ol>
 
-      {route?.source === "straight_line" && <p className="mt-2 text-[10px] text-muted">المسافات تقريبية بخط مستقيم (Haversine)، وليست مسافة قيادة.</p>}
-
-      <button onClick={onStart} disabled={Boolean(plan.startedAt)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-2 font-medium text-white hover:bg-brand-600 disabled:bg-brand-100 disabled:text-brand-700">
-        {plan.startedAt ? <Check className="size-4" aria-hidden /> : <Rocket className="size-4" aria-hidden />}
-        {plan.startedAt ? "الطلعة بدأت — بالتوفيق!" : "ابدأ الطلعة"}
+      <button onClick={onStart} disabled={Boolean(plan.startedAt)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-brand-500 py-2.5 font-bold text-white hover:bg-brand-600 disabled:bg-brand-100 disabled:text-brand-700">
+        {plan.startedAt ? <Check className="size-4" aria-hidden /> : <DirectionsIcon className="size-5" />}
+        {plan.startedAt ? "رحلتك بدأت، بالتوفيق!" : "ابدأ رحلتك"}
       </button>
     </div>
   );

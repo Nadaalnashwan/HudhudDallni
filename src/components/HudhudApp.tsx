@@ -1,15 +1,15 @@
 "use client";
-import { BarChart3, Bird, Brain, Check, Database, FlaskConical, LocateFixed, Settings, Sparkles, TriangleAlert, X } from "lucide-react";
+import { BarChart3, ChevronLeft, CircleUserRound, Navigation, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "@/lib/catalog";
 import { mergePreferences } from "@/lib/feedback";
-import { formatKm, RIYADH_CENTER } from "@/lib/geo";
+import { formatKm, formatLeg, RIYADH_CENTER } from "@/lib/geo";
 import { clearPreferences, DEFAULT_PREFS, loadLastPlan, loadPreferences, loadVisits, markDallniAsked, savePlan, savePreferences, saveVisits, shouldAskDallni, storeStatus, type StoreStatus } from "@/lib/store";
 import type { AssistantResponse, Category, ChatMessage, LatLng, ParsedRequest, Place, Plan, PlaceTag, PlanStop, Preferences, Priority, StepSpec, Subcategory, Visit } from "@/lib/types";
 import AssistantChat from "./AssistantChat";
 import DallniFeedback, { DallniStatsSheet } from "./DallniFeedback";
 import DallniLogo from "./DallniLogo";
-import { CategoryIcon } from "./icons";
+import { CategoryIcon, DirectionsIcon } from "./icons";
 import FeedbackFlow from "./FeedbackFlow";
 import MapView from "./map/MapView";
 import PlaceCard from "./PlaceCard";
@@ -17,7 +17,7 @@ import PlaceSheet from "./PlaceSheet";
 import PlanPipeline from "./PlanPipeline";
 import ThemeToggle from "./ThemeToggle";
 import { TripPanel, useTrip } from "./TripNavigator";
-import { typeLabel } from "./ui";
+import { SheetHandle, typeLabel } from "./ui";
 
 const VISIT_DELAY_MS = 30 * 60 * 1000; // ask about a visit 30 min after the outing started
 const uid = () => crypto.randomUUID();
@@ -48,7 +48,7 @@ export default function HudhudApp() {
   const [config, setConfig] = useState<Config | null>(null);
   const [store, setStore] = useState<StoreStatus | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
-  const [userOrigin, setUserOrigin] = useState<Origin>({ loc: RIYADH_CENTER, label: "موقعك" });
+  const [userOrigin, setUserOrigin] = useState<Origin>({ loc: RIYADH_CENTER, label: "مكانك الحالي" });
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [pending, setPending] = useState<Partial<ParsedRequest> | undefined>();
   const [tags, setTags] = useState<PlaceTag[]>([]);
@@ -148,8 +148,8 @@ export default function HudhudApp() {
       const s = p.stops[0];
       say({ role: "assistant", text: `أنسب خيار لك: ${s.place.name}\n${s.reason}${prefsNote()}\nوهذي بدائل لو حبيت تغيّر:`, places: [s.place, ...s.alternatives] });
     } else {
-      const lines = p.stops.map((s, i) => `${i + 1}. ${typeLabel(s.step)}: ${s.place.name}${i ? ` — ${formatKm(s.distanceFromPrevKm ?? 0)} بخط مستقيم عن ${s.anchorLabel}` : ""}`);
-      say({ role: "assistant", text: `خطتك جاهزة:\n${lines.join("\n")}${prefsNote()}\nتقدر تغيّر أي محطة أو تثبّتها من البطاقات أو تقول لي مثلاً «غير الكوفي» أو «خل المطعم إيطالي».` });
+      const lines = p.stops.map((s, i) => `${i + 1}. ${typeLabel(s.step)}: ${s.place.name}${i ? ` — يبعد تقريباً ${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}` : ""}`);
+      say({ role: "assistant", text: `خطتك جاهزة:\n${lines.join("\n")}${prefsNote()}\nتقدر تغيّر أي وجهة أو تثبّتها من البطاقات أو تقول لي مثلاً «غير الكوفي» أو «خل المطعم إيطالي».` });
     }
   };
 
@@ -191,7 +191,7 @@ export default function HudhudApp() {
   };
 
   const replaceStop = (i: number, o: Omit<RebuildOpts, "place"> = {}) => {
-    if (plan?.stops[i].locked) return say({ role: "assistant", text: "هالمحطة مثبّتة. فك التثبيت أول عشان أغيّرها." });
+    if (plan?.stops[i].locked) return say({ role: "assistant", text: "هالوجهة مثبّتة. فك التثبيت أول عشان أغيّرها." });
     // A new type is a new search; only a plain "غير" excludes the current pick.
     return rebuildFrom(i, { exclude: !o.step, ...o });
   };
@@ -246,7 +246,7 @@ export default function HudhudApp() {
     setBusy(false);
     if (next) {
       const s = next.stops[Math.min(at, next.stops.length - 1)];
-      say({ role: "assistant", text: `ضفت ${typeLabel(s.step)}: ${s.place.name} (${formatKm(s.distanceFromPrevKm ?? 0)} بخط مستقيم عن ${s.anchorLabel}).` });
+      say({ role: "assistant", text: `ضفت ${typeLabel(s.step)}: ${s.place.name} (يبعد تقريباً ${formatKm(s.distanceFromPrevKm ?? 0)} عن ${s.anchorLabel}).` });
     }
   };
 
@@ -306,7 +306,7 @@ export default function HudhudApp() {
       const a = out.action;
       if (out.fallback === "quota" && !quotaNoticeShown) {
         setQuotaNoticeShown(true);
-        say({ role: "assistant", text: "خدمة Gemini وصلت حدّها حالياً، فبكمل بالفهم المحلي لين ترجع." });
+        say({ role: "assistant", text: "الفهم الذكي متوقف مؤقتاً، فبكمل معك بالفهم الأساسي." });
       }
       applyLearned(out.learned);
       if (a.type === "clarify") {
@@ -419,6 +419,9 @@ export default function HudhudApp() {
   const focusedIsStop = focus && plan?.stops.some((s) => s.place.id === focus.place.id);
   const focusAnchor = plan && focus && focus.stopIndex > 0 ? plan.stops[focus.stopIndex - 1] : null;
 
+  const showSearch = !panelOpen && !trip && !focus;
+  const showPlanBar = plan && !panelOpen && !trip && !focus;
+
   return (
     <div className="relative h-dvh w-full overflow-hidden">
       {/* Map */}
@@ -426,7 +429,7 @@ export default function HudhudApp() {
         {trip && trip.phase !== "done" ? (
           <MapView
             origin={trip.userPos ?? trip.origin ?? userOrigin.loc}
-            originLabel={trip.userPos ? "موقعك الحالي" : trip.origin ? trip.originLabel : "موقعك"}
+            originLabel={trip.userPos || !trip.origin ? "مكانك الحالي" : trip.originLabel}
             stops={trip.stops}
             alternatives={[]}
             path={trip.route?.path ?? []}
@@ -440,42 +443,17 @@ export default function HudhudApp() {
         )}
       </div>
 
-      {/* Top bar (Hudhud-style search) */}
+      {/* Category chips over the map, as in Hudhud */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[1000] space-y-2 p-3 ${panelOpen ? "md:right-[420px]" : ""}`}>
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl bg-surface p-2 shadow-lg">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-brand-500 text-white">
-            <Bird className="size-5" aria-hidden />
-          </div>
-          <button onClick={() => setPanelOpen(true)} className="flex-1 text-right text-sm text-muted">
-            وين ودك تروح اليوم؟
-          </button>
-          <button
-            onClick={() => setPanelOpen((o) => !o)}
-            aria-pressed={panelOpen}
-            className={`inline-flex items-center gap-1.5 rounded-xl border py-1 pe-3 ps-1.5 text-sm font-bold text-brand-700 shadow-sm transition ${panelOpen ? "border-brand-500 bg-brand-100" : "border-brand-100 bg-brand-50 hover:border-brand-500"}`}
-          >
-            <span className="flex h-7 w-8 items-center justify-center">
-              <DallniLogo variant="icon" className="h-7 w-auto" priority sizes="40px" />
-            </span>
-            دلّني
-          </button>
-          <ThemeToggle />
-          <button onClick={() => setStatsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="مؤشرات دلّني" title="مؤشرات دلّني">
-            <BarChart3 className="size-5" />
-          </button>
-          <button onClick={() => setPrefsOpen(true)} className="flex size-9 items-center justify-center rounded-xl text-muted hover:bg-background" aria-label="تفضيلاتي" title="تفضيلاتي">
-            <Settings className="size-5" />
-          </button>
-        </div>
         <div className="pointer-events-auto flex gap-2 overflow-x-auto scrollbar-none">
           {QUICK_CATEGORIES.map((c) => (
             <button
               key={c}
               onClick={() => browse(c)}
               disabled={busy}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm shadow ${activeCategory === c ? "bg-brand-500 text-white" : "bg-surface"}`}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium shadow ${activeCategory === c ? "bg-brand-500 text-white" : "bg-surface"}`}
             >
-              <CategoryIcon category={c} className="size-4" /> {CATEGORY_META[c].plural}
+              <CategoryIcon category={c} className={`size-4 ${activeCategory === c ? "" : "text-brand-500"}`} /> {CATEGORY_META[c].plural}
             </button>
           ))}
         </div>
@@ -497,48 +475,92 @@ export default function HudhudApp() {
             })}
           </div>
         )}
-        {config && <SourceBanner config={config} store={store} />}
+        {config && (
+          <button
+            onClick={() => setPrefsOpen(true)}
+            className={`pointer-events-auto rounded-full px-2.5 py-0.5 text-[11px] font-medium shadow ${config.dbError ? "bg-red-100 text-red-800" : "bg-surface/90 text-muted"}`}
+          >
+            {config.dbError ? "تعذر تحميل الأماكن حالياً" : "نسخة تجريبية"}
+          </button>
+        )}
       </div>
 
-      {/* Locate me */}
-      <button
-        onClick={() =>
-          navigator.geolocation?.getCurrentPosition(
-            (pos) => setUserOrigin({ loc: { lat: pos.coords.latitude, lng: pos.coords.longitude }, label: "موقعك" }),
-            () => say({ role: "assistant", text: "ما قدرت أوصل لموقعك، بستخدم وسط الرياض." }),
-          )
-        }
-        className={`absolute left-3 z-[1000] flex size-11 items-center justify-center rounded-full bg-surface shadow-lg md:bottom-6 ${panelOpen ? "bottom-[calc(55dvh+12px)]" : "bottom-6"}`}
-        aria-label="موقعي"
+      {/* Bottom stack: locate, trip or place card, plan bar, and the search sheet */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-0 z-[1000] flex flex-col gap-2 md:bottom-3 md:left-3 md:right-auto md:w-[26rem] ${panelOpen ? "max-md:bottom-[55dvh]" : ""} ${showSearch ? "" : "max-md:pb-3"}`}
       >
-        <LocateFixed className="size-5 text-brand-600" />
-      </button>
+        <button
+          onClick={() =>
+            navigator.geolocation?.getCurrentPosition(
+              (pos) => setUserOrigin({ loc: { lat: pos.coords.latitude, lng: pos.coords.longitude }, label: "مكانك الحالي" }),
+              () => say({ role: "assistant", text: "ما قدرت أوصل لمكانك، بستخدم وسط الرياض." }),
+            )
+          }
+          className="pointer-events-auto mx-3 flex size-11 items-center justify-center self-end rounded-full bg-surface shadow-lg md:mx-0"
+          aria-label="مكاني الحالي"
+        >
+          <Navigation className="size-5 fill-brand-500 text-brand-500" />
+        </button>
 
-      {/* In-app navigation */}
-      {trip && (
-        <div className={`pointer-events-none absolute inset-x-3 bottom-6 z-[1050] mx-auto max-w-md md:left-4 md:mx-0 ${panelOpen ? "max-md:hidden md:right-[436px]" : "md:right-auto md:w-[26rem]"}`}>
-          <TripPanel api={tripApi} onCancel={tripApi.clear} />
-        </div>
-      )}
+        {trip && (
+          <div className={`pointer-events-auto mx-3 md:mx-0 ${panelOpen ? "max-md:hidden" : ""}`}>
+            <TripPanel api={tripApi} onCancel={tripApi.clear} />
+          </div>
+        )}
 
-      {/* Selected place card on the map */}
-      {focus && !trip && (
-        <div className={`absolute inset-x-3 z-[1000] mx-auto max-w-sm md:bottom-6 md:left-auto md:w-80 ${panelOpen ? "bottom-[calc(55dvh+12px)] md:right-[436px]" : "bottom-6 md:right-4"}`}>
-          <button onClick={() => setFocus(null)} className="absolute -top-3 left-2 z-10 flex size-7 items-center justify-center rounded-full bg-surface shadow" aria-label="إغلاق">
-            <X className="size-4" />
-          </button>
-          <PlaceCard
-            place={focus.place}
-            from={focusAnchor?.place.location ?? plan?.origin}
-            fromLabel={focusAnchor ? "ال" + CATEGORY_META[focusAnchor.step.category].label : plan?.originLabel}
-            reason={plan?.stops.find((s) => s.place.id === focus.place.id)?.reason}
-            badge={focusedIsStop ? `المحطة ${plan!.stops.findIndex((s) => s.place.id === focus.place.id) + 1}` : "بديل"}
-            onDetails={() => setDetails(focus.place)}
-            chooseLabel={focusedIsStop ? "غيّره" : "اختره بداله"}
-            onChoose={() => (focusedIsStop ? replaceStop(focus.stopIndex) : chooseAlternative(focus.place))}
-          />
-        </div>
-      )}
+        {focus && !trip && (
+          <div className="pointer-events-auto relative mx-3 md:mx-0">
+            <button onClick={() => setFocus(null)} className="absolute -top-3 left-2 z-10 flex size-7 items-center justify-center rounded-full bg-surface shadow" aria-label="إغلاق">
+              <X className="size-4" />
+            </button>
+            <PlaceCard
+              place={focus.place}
+              from={focusAnchor?.place.location ?? plan?.origin}
+              fromLabel={focusAnchor ? "ال" + CATEGORY_META[focusAnchor.step.category].label : plan?.originLabel}
+              reason={plan?.stops.find((s) => s.place.id === focus.place.id)?.reason}
+              badge={focusedIsStop ? `الوجهة ${plan!.stops.findIndex((s) => s.place.id === focus.place.id) + 1}` : "بديل"}
+              onDetails={() => setDetails(focus.place)}
+              chooseLabel={focusedIsStop ? "غيّره" : "اختره بداله"}
+              onChoose={() => (focusedIsStop ? replaceStop(focus.stopIndex) : chooseAlternative(focus.place))}
+            />
+          </div>
+        )}
+
+        {showPlanBar && (
+          <div className="pointer-events-auto mx-3 flex items-center gap-2 rounded-2xl bg-surface p-2 ps-3 shadow-lg md:mx-0">
+            <button onClick={() => setPanelOpen(true)} className="flex min-w-0 flex-1 items-center gap-1 text-right">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold">{plan.stops.length > 1 ? `طلعتك: ${destinations(plan.stops.length)}` : plan.stops[0].place.name}</span>
+                {plan.route && plan.route.distanceMeters > 0 && <span className="block text-xs text-muted">{formatLeg(plan.route.distanceMeters, plan.route.durationSeconds)}</span>}
+              </span>
+              <ChevronLeft className="size-4 shrink-0 text-muted" aria-hidden />
+            </button>
+            <button onClick={startPlanTrip} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brand-500 px-4 py-2 text-sm font-bold text-white hover:bg-brand-600">
+              <DirectionsIcon className="size-5" /> ابدأ رحلتك
+            </button>
+          </div>
+        )}
+
+        {showSearch && (
+          <div className="pointer-events-auto rounded-t-3xl bg-surface px-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,.12)] md:rounded-3xl md:pt-3 md:shadow-lg">
+            <div className="flex justify-center py-2 md:hidden">
+              <span className="h-1 w-10 rounded-full bg-line" />
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPanelOpen(true)} className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full bg-background pe-1.5 ps-4 text-sm text-muted">
+                <Search className="size-5 shrink-0" aria-hidden />
+                <span className="flex-1 truncate text-right">وين ودك تروح اليوم؟</span>
+                <span className="flex h-8 w-9 shrink-0 items-center justify-center">
+                  <DallniLogo variant="icon" className="h-7 w-auto" priority sizes="40px" />
+                </span>
+              </button>
+              <button onClick={() => setPrefsOpen(true)} className="flex size-11 shrink-0 items-center justify-center rounded-full bg-background text-muted" aria-label="الإعدادات">
+                <CircleUserRound className="size-6" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Dallni: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
       <aside
@@ -548,13 +570,13 @@ export default function HudhudApp() {
           panelOpen ? "flex" : "hidden"
         }`}
       >
-        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
-          <h2 className="flex items-center gap-2">
-            <DallniLogo className="h-[72px] w-auto" sizes="80px" />
+        <SheetHandle onClose={() => setPanelOpen(false)} label="إغلاق دلّني" />
+        <div className="flex items-center justify-between gap-2 px-4 pb-1 md:pt-3">
+          <h2>
+            <DallniLogo className="h-12 w-auto" sizes="60px" />
             <span className="sr-only">دلّني</span>
-            <span className="text-xs text-muted">مساعدك الذكي لطلعاتك في هدهد</span>
           </h2>
-          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="إغلاق دلّني">
+          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق دلّني">
             <X className="size-4" />
           </button>
         </div>
@@ -586,9 +608,8 @@ export default function HudhudApp() {
                 </div>
               ) : messages.length <= 1 ? (
                 // welcome screen
-                <div className="flex flex-col items-center pb-2 pt-4 text-center">
+                <div className="flex justify-center pb-2 pt-4">
                   <DallniLogo className="h-40 w-auto" sizes="180px" />
-                  <p className="mt-2 text-sm text-muted">قول لي وش ودك تسوي، وأنا أرتب لك طلعتك على الخريطة.</p>
                 </div>
               ) : null
             }
@@ -649,48 +670,36 @@ export default function HudhudApp() {
 
       {statsOpen && <DallniStatsSheet onClose={() => setStatsOpen(false)} />}
 
-      {prefsOpen && <PrefsSheet prefs={prefs} store={store} onChange={updatePrefs} onClear={resetPrefs} onClose={() => setPrefsOpen(false)} />}
+      {prefsOpen && (
+        <SettingsSheet
+          config={config}
+          prefs={prefs}
+          store={store}
+          onChange={updatePrefs}
+          onClear={resetPrefs}
+          onStats={() => {
+            setPrefsOpen(false);
+            setStatsOpen(true);
+          }}
+          onClose={() => setPrefsOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-/** Always tells the user which data they are looking at, and when something is down. */
-function SourceBanner({ config, store }: { config: Config; store: StoreStatus | null }) {
-  const pill = "pointer-events-auto inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] shadow";
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {config.places === "supabase" && config.dbError && (
-        <span className={`${pill} bg-red-100 text-red-800`}>
-          <TriangleAlert className="size-3" aria-hidden /> تعذر الاتصال بقاعدة البيانات
-        </span>
-      )}
-      {config.places === "supabase" && !config.dbError && (
-        <span className={`${pill} bg-surface text-muted`}>
-          <Database className="size-3" aria-hidden /> {config.placesCount?.toLocaleString("ar-SA")} مكان تجريبي من قاعدة البيانات
-        </span>
-      )}
-      {config.places === "demo" && (
-        <span className={`${pill} bg-amber-100 text-amber-900`}>
-          <FlaskConical className="size-3" aria-hidden /> بيانات محلية تجريبية (قاعدة البيانات غير مهيأة)
-        </span>
-      )}
-      {config.ai === "gemini" && (
-        <span className={`${pill} bg-surface text-muted`}>
-          <Sparkles className="size-3" aria-hidden /> فهم الطلبات: Gemini
-        </span>
-      )}
-      {config.ai === "rules" && (
-        <span className={`${pill} bg-surface text-muted`}>
-          <Brain className="size-3" aria-hidden /> فهم الطلبات بقواعد محلية (Gemini غير مفعّل)
-        </span>
-      )}
-      {store?.mode === "local" && (
-        <span className={`${pill} bg-amber-100 text-amber-900`} title={store.reason}>
-          <FlaskConical className="size-3" aria-hidden /> التقييمات والتفضيلات محفوظة على الجهاز
-        </span>
-      )}
-    </div>
-  );
+/** "وجهتين" / "3 وجهات" */
+const destinations = (n: number) => (n === 2 ? "وجهتين" : `${n} ${n <= 10 ? "وجهات" : "وجهة"}`);
+
+/** What this prototype runs on, in plain words. */
+function aboutLines(config: Config | null, store: StoreStatus | null) {
+  const lines: string[] = [];
+  if (config?.dbError) lines.push("تعذر تحميل الأماكن حالياً");
+  else if (config?.places === "supabase") lines.push(`${config.placesCount?.toLocaleString("en-US") ?? ""} مكان تجريبي في الرياض`.trim());
+  else if (config?.places === "demo") lines.push("أماكن تجريبية محفوظة داخل التطبيق");
+  if (config) lines.push(config.ai === "gemini" ? "يفهم طلباتك بالذكاء الاصطناعي" : "يفهم طلباتك بالفهم الأساسي");
+  if (store) lines.push(store.mode === "supabase" ? "تقييماتك وتفضيلاتك محفوظة لك بشكل خاص" : "تقييماتك وتفضيلاتك محفوظة على جهازك");
+  return lines;
 }
 
 function PrefList({ title, items }: { title: string; items: string[] }) {
@@ -703,42 +712,85 @@ function PrefList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function PrefsSheet({ prefs, store, onChange, onClear, onClose }: { prefs: Preferences; store: StoreStatus | null; onChange: (p: Preferences) => void; onClear: () => void; onClose: () => void }) {
+function SettingsSheet({
+  config,
+  prefs,
+  store,
+  onChange,
+  onClear,
+  onStats,
+  onClose,
+}: {
+  config: Config | null;
+  prefs: Preferences;
+  store: StoreStatus | null;
+  onChange: (p: Preferences) => void;
+  onClear: () => void;
+  onStats: () => void;
+  onClose: () => void;
+}) {
   const sub = (l: Subcategory[]) => l.map((s) => SUBCATEGORY_META[s].label);
   const empty = !prefs.likes.length && !prefs.cuisines.length && !prefs.cafeTypes.length && !prefs.neighborhoods.length && !prefs.avoid.length && !prefs.notes.length && !prefs.minRating && !prefs.budget && !prefs.distance;
+  const row = "flex w-full items-center justify-between gap-3 rounded-xl bg-background p-3 text-sm";
   return (
     <div className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/40 md:items-center" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full space-y-3 rounded-t-3xl bg-surface p-5 md:max-w-md md:rounded-3xl">
-        <h2 className="inline-flex items-center gap-2 text-lg font-bold">
-          <Brain className="size-5 text-brand-600" aria-hidden /> تفضيلاتي
-        </h2>
-        <label className="flex items-center justify-between gap-3 rounded-xl bg-background p-3 text-sm">
-          <span>أسمح للمساعد يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
-          <input type="checkbox" checked={prefs.consent} onChange={(e) => onChange({ ...prefs, consent: e.target.checked })} className="size-5 accent-brand-500" />
-        </label>
-        <div className="space-y-2 text-sm">
-          {empty && <p className="text-muted">لا شيء محفوظ بعد.</p>}
-          <PrefList title="أفضّل:" items={prefs.likes.map((t) => TAG_LABELS[t])} />
-          <PrefList title="المطابخ المفضلة:" items={sub(prefs.cuisines)} />
-          <PrefList title="نوع الكوفي المفضل:" items={sub(prefs.cafeTypes)} />
-          <PrefList title="الأحياء المفضلة:" items={prefs.neighborhoods} />
-          <PrefList title="الميزانية:" items={prefs.budget === "low" ? ["اقتصادي"] : []} />
-          <PrefList title="الترتيب المفضل:" items={prefs.distance === "distance" ? ["الأقرب"] : prefs.distance === "rating" ? ["الأعلى تقييماً"] : []} />
-          <PrefList title="أتجنب:" items={prefs.avoid} />
-          <PrefList title="أقل تقييم مفضّل:" items={prefs.minRating ? [String(prefs.minRating)] : []} />
-          <PrefList title="ملاحظاتي:" items={prefs.notes} />
-        </div>
-        <p className="text-[11px] text-muted">
-          {store?.mode === "supabase" ? "محفوظة في حسابك المجهول على قاعدة البيانات، ومحمية بحيث ما يشوفها غيرك." : "محفوظة على هذا الجهاز فقط (وضع تجريبي)."}
-        </p>
-        <div className="flex gap-2">
-          <button onClick={onClear} className="flex-1 rounded-xl border border-red-200 py-2 text-sm text-red-600">
-            امسح تفضيلاتي
-          </button>
-          <button onClick={onClose} className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-brand-500 py-2 text-sm text-white">
-            <Check className="size-4" aria-hidden /> تم
+      <div onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface px-5 pb-5 md:max-w-md md:rounded-3xl md:pt-5">
+        <SheetHandle onClose={onClose} />
+        <div className="flex items-center justify-between pb-3">
+          <h2 className="text-lg font-bold">الإعدادات</h2>
+          <button onClick={onClose} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق">
+            <X className="size-4" />
           </button>
         </div>
+
+        <div className="space-y-2">
+          <div className={`${row} py-1.5`}>
+            <span>المظهر</span>
+            <ThemeToggle />
+          </div>
+          <button onClick={onStats} className={row}>
+            <span className="inline-flex items-center gap-2">
+              <BarChart3 className="size-4 text-brand-600" aria-hidden /> مؤشرات دلّني
+            </span>
+            <ChevronLeft className="size-4 text-muted" aria-hidden />
+          </button>
+        </div>
+
+        <h3 className="pb-2 pt-5 font-bold">تفضيلاتي</h3>
+        <div className="space-y-3">
+          <label className={row}>
+            <span>أسمح لدلّني يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
+            <input type="checkbox" checked={prefs.consent} onChange={(e) => onChange({ ...prefs, consent: e.target.checked })} className="size-5 shrink-0 accent-brand-500" />
+          </label>
+          <div className="space-y-2 text-sm">
+            {empty && <p className="text-muted">لا شيء محفوظ بعد.</p>}
+            <PrefList title="أفضّل:" items={prefs.likes.map((t) => TAG_LABELS[t])} />
+            <PrefList title="المطابخ المفضلة:" items={sub(prefs.cuisines)} />
+            <PrefList title="نوع الكوفي المفضل:" items={sub(prefs.cafeTypes)} />
+            <PrefList title="الأحياء المفضلة:" items={prefs.neighborhoods} />
+            <PrefList title="الميزانية:" items={prefs.budget === "low" ? ["اقتصادي"] : []} />
+            <PrefList title="الترتيب المفضل:" items={prefs.distance === "distance" ? ["الأقرب"] : prefs.distance === "rating" ? ["الأعلى تقييماً"] : []} />
+            <PrefList title="أتجنب:" items={prefs.avoid} />
+            <PrefList title="أقل تقييم مفضّل:" items={prefs.minRating ? [String(prefs.minRating)] : []} />
+            <PrefList title="ملاحظاتي:" items={prefs.notes} />
+          </div>
+          {!empty && (
+            <button onClick={onClear} className="w-full rounded-xl border border-red-200 py-2 text-sm text-red-600">
+              امسح تفضيلاتي
+            </button>
+          )}
+        </div>
+
+        <h3 className="pb-2 pt-5 font-bold">عن النسخة التجريبية</h3>
+        <ul className="list-inside list-disc space-y-1 text-sm text-muted">
+          {aboutLines(config, store).map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+
+        <button onClick={onClose} className="mt-5 w-full rounded-full bg-brand-500 py-2.5 text-sm font-bold text-white hover:bg-brand-600">
+          تم
+        </button>
       </div>
     </div>
   );

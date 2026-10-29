@@ -12,6 +12,11 @@ export function haversineKm(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+/** The app shows Latin digits only; model replies sometimes use Arabic-Indic ones (٠-٩, ۰-۹). */
+export function latinDigits(text: string) {
+  return text.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) & 0xf));
+}
+
 export function formatKm(km: number) {
   return km < 1 ? `${Math.round(km * 1000)} م` : `${km.toFixed(1)} كم`;
 }
@@ -19,6 +24,11 @@ export function formatKm(km: number) {
 export function formatMinutes(seconds: number) {
   const m = Math.max(1, Math.round(seconds / 60));
   return m < 60 ? `${m} د` : `${Math.floor(m / 60)} س ${m % 60} د`;
+}
+
+/** Route or leg summary in Hudhud's format ("15 د • 10.7 كم"); without a road route, approximate distance only. */
+export function formatLeg(meters: number, seconds?: number) {
+  return seconds ? `${formatMinutes(seconds)} • ${formatKm(meters / 1000)}` : `${formatKm(meters / 1000)} تقريباً`;
 }
 
 /** Decode a Google encoded polyline. */

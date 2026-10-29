@@ -4,7 +4,8 @@ import { useEffect } from "react";
 import { CATEGORY_META } from "@/lib/catalog";
 import type { LatLng } from "@/lib/types";
 import type { MapProps } from "./MapView";
-import { pinHtml } from "./pin";
+import { CATEGORY_ICON_PATH } from "../icons";
+import { altPinHtml, pinHtml, ROUTE_BLUE } from "./pin";
 
 function Pin({ html }: { html: string }) {
   return <div dangerouslySetInnerHTML={{ __html: html }} />;
@@ -16,7 +17,7 @@ function Overlay({ origin, stops, alternatives, path }: Pick<MapProps, "origin" 
   useEffect(() => {
     if (!map || path.length < 2) return;
     const casing = new google.maps.Polyline({ path, strokeColor: "#ffffff", strokeWeight: 9, map });
-    const line = new google.maps.Polyline({ path, strokeColor: "#12a189", strokeWeight: 5, map });
+    const line = new google.maps.Polyline({ path, strokeColor: ROUTE_BLUE, strokeWeight: 5, map });
     return () => {
       casing.setMap(null);
       line.setMap(null);
@@ -52,17 +53,17 @@ export default function GoogleMap(props: MapProps) {
         gestureHandling="greedy"
         className="h-full w-full"
       >
-        <AdvancedMarker position={origin} title="موقعك">
-          <div className="size-4 rounded-full border-[3px] border-white bg-[#2f80ed] shadow" />
+        <AdvancedMarker position={origin} title="مكانك الحالي">
+          <div className="size-4 rounded-full border-[3px] border-white bg-[#2086FF] shadow" />
         </AdvancedMarker>
         {alternatives.map((p) => (
           <AdvancedMarker key={p.id} position={p.location} title={p.name} onClick={() => onSelect(p)}>
-            <Pin html={pinHtml("•", "#94a3b8", p.id === selectedId, true)} />
+            <Pin html={altPinHtml(p.id === selectedId)} />
           </AdvancedMarker>
         ))}
         {stops.map((p, i) => (
           <AdvancedMarker key={p.id} position={p.location} title={p.name} onClick={() => onSelect(p)} zIndex={1000}>
-            <Pin html={pinHtml(String(i + 1), CATEGORY_META[p.category].color, p.id === selectedId)} />
+            <Pin html={pinHtml(CATEGORY_ICON_PATH[p.category], CATEGORY_META[p.category].color, p.id === selectedId, stops.length > 1 ? i + 1 : undefined)} />
           </AdvancedMarker>
         ))}
         <Overlay {...props} />

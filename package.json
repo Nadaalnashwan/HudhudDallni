@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
+    "@mdi/js": "^7.4.47",
     "@supabase/supabase-js": "^2.118.0",
     "@vis.gl/react-google-maps": "^1.10.1",
     "leaflet": "^1.9.4",

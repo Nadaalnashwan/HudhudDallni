@@ -25,7 +25,7 @@ const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
   balanced: { prox: 0.4, rating: 0.4 },
 };
 
-export const anchorName = (place: Place) => "ال" + CATEGORY_META[place.category].label;
+const anchorName = (place: Place) => "ال" + CATEGORY_META[place.category].label;
 
 const learned = (input: BuildInput) => (input.preferences?.consent ? input.preferences : undefined);
 

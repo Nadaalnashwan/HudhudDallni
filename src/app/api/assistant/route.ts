@@ -25,7 +25,7 @@ ACTION واحد من:
 - {"type":"add","step":STEP,"after":رقم المحطة اللي تجي بعدها أو null للنهاية}
 - {"type":"chat"}
 
-STEP = {"category":C,"subcategory":S أو null,"placeName":"فقط إذا سمّى المستخدم مكان معين" أو null,"tags":[T],"mealTime":"lunch|dinner" أو null}
+STEP = {"category":C,"subcategory":S أو null,"placeName":"فقط إذا سمّى المستخدم مكان معين" أو null,"tags":[T]}
 
 C (الفئة): ${CATS.map((c) => `${c}=${CATEGORY_META[c].label}`).join("، ")}
 S (النوع الفرعي — لازم يتبع نفس الفئة):
@@ -61,7 +61,6 @@ function cleanStep(s: Partial<StepSpec> & { category: Category }): StepSpec {
     subcategory: cleanSub(s.category, s.subcategory),
     placeName: nonEmpty(s.placeName),
     tags: cleanTags(s.tags),
-    mealTime: s.mealTime === "lunch" || s.mealTime === "dinner" ? s.mealTime : undefined,
   };
 }
 

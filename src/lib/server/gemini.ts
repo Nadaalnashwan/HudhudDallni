@@ -17,7 +17,7 @@ import { ApiError, GoogleGenAI } from "@google/genai";
 const KEYS = [process.env.GEMINI_API_KEY_1, process.env.GEMINI_API_KEY_2, process.env.GEMINI_API_KEY_3].filter(
   (k): k is string => Boolean(k?.trim()),
 );
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const MAX_ATTEMPTS = 3;
 const TIMEOUT_MS = 12_000; // per attempt
 const BUDGET_MS = 20_000; // total across retries — a chat reply must not hang
@@ -25,17 +25,10 @@ const BUDGET_MS = 20_000; // total across retries — a chat reply must not hang
 const clients = new Map<string, GoogleGenAI>();
 const badKeys = new Set<number>();
 let cursor = 0; // index of the key that last worked
-let lastError: string | undefined;
 let quotaUntil = 0; // epoch ms; no Gemini calls before this
 
 export const geminiEnabled = () => KEYS.length > 0 && badKeys.size < KEYS.length;
-export const geminiStatus = () => ({
-  keys: KEYS.length,
-  usableKeys: KEYS.length - badKeys.size,
-  model: GEMINI_MODEL,
-  lastError,
-  pausedForQuotaMs: Math.max(0, quotaUntil - Date.now()),
-});
+export const geminiStatus = () => ({ model: GEMINI_MODEL, usableKeys: KEYS.length - badKeys.size });
 
 /** Google's 429 body carries e.g. "retryDelay":"36s". */
 function retryDelayMs(message: string) {
@@ -44,7 +37,7 @@ function retryDelayMs(message: string) {
 }
 
 export class GeminiQuotaError extends Error {}
-export class GeminiUnavailableError extends Error {}
+class GeminiUnavailableError extends Error {}
 
 const client = (key: string) => {
   let c = clients.get(key);
@@ -93,15 +86,13 @@ async function generate(system: string, user: string, opts: { json: boolean; tem
         },
       });
       cursor = idx;
-      lastError = undefined;
       const text = res.text?.trim();
       if (!text) throw new GeminiUnavailableError("empty response");
       return text;
     } catch (e) {
       lastFailure = e;
       const kind = classify(e);
-      lastError = `${kind}: ${(e as Error).message.slice(0, 160)}`;
-      console.error(`Gemini attempt ${attempt} (key #${idx + 1}) failed — ${lastError}`);
+      console.error(`Gemini attempt ${attempt} (key #${idx + 1}) failed — ${kind}: ${(e as Error).message.slice(0, 160)}`);
       if (kind === "quota") {
         quotaUntil = Date.now() + retryDelayMs((e as Error).message);
         throw new GeminiQuotaError((e as Error).message);

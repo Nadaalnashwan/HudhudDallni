@@ -24,7 +24,7 @@ export default function LeafletMap({ origin, originLabel = "موقعك", stops, 
     }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
     map.current.on("click", (e: L.LeafletMouseEvent) => onMapClickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng }));
-    // the container changes size when دلّني opens/closes — keep tiles and bounds correct
+    // the container changes size when Dallni opens/closes — keep tiles and bounds correct
     const ro = new ResizeObserver(() => map.current?.invalidateSize());
     ro.observe(el.current);
     return () => {

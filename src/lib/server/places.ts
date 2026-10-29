@@ -9,6 +9,7 @@ import { getPlaceById, queryPlaces } from "./supabasePlaces";
 export { PlacesUnavailableError } from "./supabasePlaces";
 
 const KEY = process.env.GOOGLE_MAPS_API_KEY;
+const SEARCH_RADIUS_M = 6000; // Google Places location bias around the previous stop
 
 /**
  * Exactly one place source is active — sources are never mixed:
@@ -16,13 +17,12 @@ const KEY = process.env.GOOGLE_MAPS_API_KEY;
  */
 export const placesMode = (): Place["source"] => (supabaseConfigured() ? "supabase" : KEY ? "google" : "demo");
 
-export type SearchOpts = {
+type SearchOpts = {
   category: Category;
   subcategory?: Subcategory;
   neighborhood?: string;
   query?: string; // a place name the user mentioned
   near: LatLng;
-  radiusKm?: number;
 };
 
 /** Candidates for one step. Returns the full filtered set; the planner ranks by distance. */
@@ -122,7 +122,6 @@ function fromGoogle(p: GooglePlace, category: Category, subcategory?: Subcategor
 async function googleSearch(opts: SearchOpts): Promise<Place[]> {
   const meta = CATEGORY_META[opts.category];
   const sub = opts.subcategory ? SUBCATEGORY_META[opts.subcategory].label : "";
-  const radiusKm = opts.radiusKm ?? 6;
   const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": KEY!, "X-Goog-FieldMask": FIELDS },
@@ -131,7 +130,7 @@ async function googleSearch(opts: SearchOpts): Promise<Place[]> {
       languageCode: "ar",
       regionCode: "SA",
       pageSize: 20,
-      locationBias: { circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: Math.min(radiusKm * 1000, 50000) } },
+      locationBias: { circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: SEARCH_RADIUS_M } },
     }),
     next: { revalidate: 3600 },
   });

@@ -24,7 +24,7 @@ const LEARN: Record<string, { like?: Preferences["likes"][number]; avoid?: strin
 
 const add = <T,>(list: T[], v?: T) => (v === undefined || list.includes(v) ? list : [...list, v]);
 
-export function learnFromFeedback(prefs: Preferences, visit: Visit, exp: Experience, reasons: string[], note: string): Preferences {
+function learnFromFeedback(prefs: Preferences, visit: Visit, exp: Experience, reasons: string[], note: string): Preferences {
   let next: Preferences = { ...prefs };
   for (const r of reasons) {
     const rule = LEARN[r];

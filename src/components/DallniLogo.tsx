@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 /**
- * The approved دلّني logo. Both theme variants are rendered and CSS shows the right one
+ * The approved Dallni logo. Both theme variants are rendered and CSS shows the right one
  * (`.dark` on <html>), so it switches instantly with the theme and never flashes.
  * Next/Image serves resized WebP/AVIF from the full-resolution PNGs in /public/branding.
  */

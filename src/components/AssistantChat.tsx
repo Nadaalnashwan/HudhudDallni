@@ -4,7 +4,7 @@ import type { ChatMessage, LatLng, Place } from "@/lib/types";
 import PlaceCard from "./PlaceCard";
 import { Spinner } from "./ui";
 
-export const SUGGESTIONS = ["أبي قهوة", "أبي أتغدى", "أبي أتعشى", "أبي كوفي هادي", "خطط لي طلعة"];
+const SUGGESTIONS = ["أبي قهوة", "أبي أتغدى", "أبي أتعشى", "أبي كوفي هادي", "خطط لي طلعة"];
 
 type Props = {
   messages: ChatMessage[];

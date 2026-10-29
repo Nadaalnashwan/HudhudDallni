@@ -2,7 +2,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export const THEME_KEY = "hudhud.theme";
+const THEME_KEY = "hudhud.theme";
 type Theme = "light" | "dark";
 
 function storedTheme(): Theme | null {

@@ -6,9 +6,9 @@ import { formatKm, formatMinutes, haversineKm } from "@/lib/geo";
 import type { LatLng, Place, RouteResult } from "@/lib/types";
 import { Spinner } from "./ui";
 
-export type TripPhase = "locating" | "need_origin" | "routing" | "navigating" | "feedback" | "next_prompt" | "done";
+type TripPhase = "locating" | "need_origin" | "routing" | "navigating" | "feedback" | "next_prompt" | "done";
 
-export type TripState = {
+type TripState = {
   stops: Place[]; // the user's requested order, one leg at a time
   index: number; // current destination
   planId?: string;

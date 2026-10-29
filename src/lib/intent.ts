@@ -11,7 +11,7 @@ export type IntentContext = {
   pending?: Partial<ParsedRequest>;
 };
 
-export const normalize = (s: string) =>
+const normalize = (s: string) =>
   s
     .toLowerCase()
     .replace(/[ً-ٟـ]/g, "")
@@ -55,7 +55,7 @@ const ORDINALS: [RegExp, (n: number) => number][] = [
 
 const firstMatch = (text: string, w: string) => new RegExp(PREFIX + normalize(w)).exec(text)?.index ?? -1;
 
-export function findCategories(text: string): { category: Category; at: number }[] {
+function findCategories(text: string): { category: Category; at: number }[] {
   const hits: { category: Category; at: number }[] = [];
   const add = (category: Category, words: string[]) => {
     for (const w of words) {
@@ -85,7 +85,7 @@ export function findCategories(text: string): { category: Category; at: number }
 }
 
 /** The subcategory mentioned within one step's segment of the sentence, limited to that category. */
-export function findSubcategory(segment: string, category: Category): Subcategory | undefined {
+function findSubcategory(segment: string, category: Category): Subcategory | undefined {
   let best: { s: Subcategory; at: number } | undefined;
   for (const s of subcategoriesOf(category))
     for (const w of SUBCATEGORY_META[s].words) {
@@ -95,18 +95,18 @@ export function findSubcategory(segment: string, category: Category): Subcategor
   return best?.s;
 }
 
-export function findTags(text: string): PlaceTag[] {
+function findTags(text: string): PlaceTag[] {
   return (Object.keys(TAG_WORDS) as PlaceTag[]).filter((t) => TAG_WORDS[t].some((w) => text.includes(normalize(w))));
 }
 
-export function findDistrict(text: string): string | undefined {
+function findDistrict(text: string): string | undefined {
   return Object.keys(DISTRICTS).find((d) => {
     const n = normalize(d);
     return text.includes(n) || text.includes(n.replace(/^ال/, " "));
   });
 }
 
-export function findPriority(text: string): Priority | undefined {
+function findPriority(text: string): Priority | undefined {
   if (/(ما يفرق|مايفرق|اي شي|عادي|الاثنين|كلهم)/.test(text)) return "balanced";
   if (/(الاقرب|اقرب|قريب مني|قريب لي|المسافه|مسافه)/.test(text)) return "distance";
   if (/(تقييم|الافضل|احسن|اعلي|افضل)/.test(text)) return "rating";
@@ -120,10 +120,6 @@ function stepsFrom(text: string): StepSpec[] {
     const step: StepSpec = { category };
     const sub = findSubcategory(segment, category);
     if (sub) step.subcategory = sub;
-    if (category === "restaurant") {
-      if (/(غدا|اتغدي)/.test(segment)) step.mealTime = "lunch";
-      if (/(عشا|اتعشي)/.test(segment)) step.mealTime = "dinner";
-    }
     return step;
   });
 }

@@ -2,7 +2,7 @@
 import { CakeSlice, Coffee, Dumbbell, Gamepad2, ShoppingBag, Trees, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import type { Category } from "@/lib/types";
 
-export const CATEGORY_ICON: Record<Category, LucideIcon> = {
+const CATEGORY_ICON: Record<Category, LucideIcon> = {
   cafe: Coffee,
   restaurant: UtensilsCrossed,
   gym: Dumbbell,

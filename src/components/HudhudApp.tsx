@@ -60,7 +60,7 @@ export default function HudhudApp() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [feedbackOn, setFeedbackOn] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false); // map first; دلّني opens on demand
+  const [panelOpen, setPanelOpen] = useState(false); // map first; Dallni opens on demand
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
   const [dallniAsk, setDallniAsk] = useState<{ planId?: string } | null>(null);
@@ -381,7 +381,7 @@ export default function HudhudApp() {
     if (!next.some((v) => v.status === "pending")) setFeedbackOn(false);
   };
 
-  // An outing ended → once per outing (and not more than every 12 h) ask about دلّني itself.
+  // An outing ended → once per outing (and not more than every 12 h) ask about Dallni itself.
   useEffect(() => {
     if (trip?.phase !== "done") return;
     const key = trip.planId ?? trip.stops[0]?.id;
@@ -540,8 +540,7 @@ export default function HudhudApp() {
         </div>
       )}
 
-      {/* Assistant panel: bottom sheet on mobile, side panel on desktop */}
-      {/* دلّني: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
+      {/* Dallni: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
       <aside
         aria-label="دلّني"
         aria-hidden={!panelOpen}

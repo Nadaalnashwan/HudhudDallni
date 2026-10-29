@@ -1,5 +1,5 @@
 -- Applied to the Hudhud AI project on 2026-10-29.
--- Feedback about the دلّني assistant itself (not place reviews). Private, owner-only rows.
+-- Feedback about the Dallni assistant itself (not place reviews). Private, owner-only rows.
 create table if not exists hudhud_demo.assistant_feedback (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,

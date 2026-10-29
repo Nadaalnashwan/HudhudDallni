@@ -55,10 +55,8 @@ export type Priority = "distance" | "rating" | "balanced";
 export type StepSpec = {
   category: Category;
   subcategory?: Subcategory;
-  query?: string; // free text, e.g. "كوفي مختص"
   placeName?: string; // user named a specific place
   tags?: PlaceTag[];
-  mealTime?: "lunch" | "dinner";
 };
 
 export type PlanStop = {

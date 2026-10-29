@@ -4,9 +4,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * One place for Supabase config. Only the publishable (anon-role) key is used —
  * all access is governed by RLS. Never put a service-role key here.
  */
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-export const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-export const DB_SCHEMA = "hudhud_demo";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const DB_SCHEMA = "hudhud_demo";
 
 export const supabaseConfigured = () => Boolean(SUPABASE_URL && SUPABASE_KEY);
 

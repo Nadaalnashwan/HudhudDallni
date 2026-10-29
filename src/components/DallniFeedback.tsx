@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { loadDallniStats, saveAssistantFeedback, type AssistantFeedback, type DallniStats } from "@/lib/store";
 import { Spinner } from "./ui";
 
-export const IMPROVEMENTS: { value: AssistantFeedback["improvements"][number]; label: string }[] = [
+const IMPROVEMENTS: { value: AssistantFeedback["improvements"][number]; label: string }[] = [
   { value: "accuracy", label: "دقة الاقتراحات" },
   { value: "proximity", label: "قرب الأماكن" },
   { value: "variety", label: "تنوع الخيارات" },
@@ -30,7 +30,7 @@ function Choice<T extends string>({ value, options, onChange }: { value?: T; opt
   );
 }
 
-/** Feedback about دلّني itself — stored in hudhud_demo.assistant_feedback, never as a place review. */
+/** Feedback about Dallni itself — stored in hudhud_demo.assistant_feedback, never as a place review. */
 export default function DallniFeedback({ planId, onDone }: { planId?: string; onDone: (message?: string) => void }) {
   const [helpful, setHelpful] = useState<AssistantFeedback["helpful"]>();
   const [usedPlace, setUsedPlace] = useState<AssistantFeedback["usedPlace"]>();

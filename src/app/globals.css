@@ -54,7 +54,6 @@
   --color-brand-500: #12a189;
   --color-brand-600: var(--brand-600);
   --color-brand-700: var(--brand-700);
-  --color-accent: #f2994a;
   --font-sans: var(--font-arabic), system-ui, sans-serif;
 }
 

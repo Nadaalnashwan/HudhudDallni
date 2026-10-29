@@ -40,7 +40,7 @@ let status: StoreStatus | null = null;
 let userPromise: Promise<string | null> | null = null;
 
 /** Anonymous Supabase session (needs "Allow anonymous sign-ins" in the dashboard). */
-export function ensureUser(): Promise<string | null> {
+function ensureUser(): Promise<string | null> {
   const db = getBrowserSupabase();
   if (!db) {
     status = { mode: "local", reason: "Supabase غير مهيأ" };
@@ -71,7 +71,7 @@ export async function storeStatus(): Promise<StoreStatus> {
 /** Only database places can be written to hudhud_demo tables. */
 const dbPlace = (p: { source: Place["source"] }) => p.source === "supabase";
 
-export function localUserId(): string {
+function localUserId(): string {
   let id = ls.get<string | null>("hudhud.userId", null);
   if (!id) {
     id = crypto.randomUUID();
@@ -210,7 +210,7 @@ export async function listReviews(place: Place): Promise<Review[]> {
   return ls.get<Review[]>("hudhud.reviews", []).filter((r) => r.placeId === place.id);
 }
 
-// ---------------------------------------------------------------- دلّني feedback (about the assistant, not places)
+// ---------------------------------------------------------------- Dallni feedback (about the assistant, not places)
 
 export type AssistantFeedback = {
   helpful: "yes" | "partly" | "no";

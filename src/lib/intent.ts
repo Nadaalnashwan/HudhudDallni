@@ -1,14 +1,32 @@
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf } from "./catalog";
-import type { AssistantResponse, Category, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
+import { RIYADH_CENTER } from "./geo";
+import type { AssistantResponse, Category, ConstraintEdit, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
 /**
  * Rule-based understanding of Saudi-dialect requests. Used when Gemini is not
- * configured, and as a safety net when the LLM returns something invalid.
+ * configured, and as a safety net when the LLM is unavailable or returns something invalid.
+ * When a plan-change request is unclear it asks instead of guessing.
  */
 
+export type PlanStepContext = {
+  category: Category;
+  subcategory?: Subcategory;
+  locked: boolean;
+  name?: string; // place name
+  placeId?: string;
+  distanceKm?: number; // from the previous stop (or the start)
+};
+
+export type ChatTurn = { role: "user" | "assistant"; text: string };
+
 export type IntentContext = {
-  planSteps: { category: Category; subcategory?: Subcategory; locked: boolean; name?: string }[];
+  planSteps: PlanStepContext[];
   pending?: Partial<ParsedRequest>;
+  plan?: { district?: string; priority?: Priority; tags?: PlaceTag[] };
+  goal?: string; // the user's words that created the current plan
+  history?: ChatTurn[]; // recent turns, oldest first
+  rejectedIds?: string[]; // places the user already turned down this session
+  canUndo?: boolean;
 };
 
 const normalize = (s: string) =>
@@ -137,6 +155,44 @@ function targetIndex(text: string, ctx: IntentContext): number | undefined {
   return undefined;
 }
 
+// --- whole-plan changes (normalized text: أ/إ/آ→ا، ى→ي، ة→ه)
+const UNDO = /(^|\s)(تراجع|undo)(\s|$)|(رجع|ارجع|رجعلي|رجعها|رجعه)\S*\s.*(قبل|السابق|القديم|كانت)|(الخطه|خطتي)\s*(السابقه|القديمه|اللي قبل)/;
+/** The itinerary itself: "غيرلي الخطة"، "ما عجبتني الخطة"، "سو لي خطة ثانية"، "نبدأ من جديد". */
+const WHOLE_PLAN = /((غير|بدل)\S*\s*(لي\s*)?(ال)?خطه)|((ما|مو|ماني)\s*\S*(عجبتني|عاجبتني|عاجبني|عجبني|حاب|حابب)\S*\s*(ال)?خطه)|(خطه\s*(ثانيه|جديده|غير|مختلفه|اخري))|(من جديد|من الصفر|من اول وجديد)|((different|another|new|other) plan|start over|something( [a-z]+)? (else|different))/;
+/** Vaguer "something else" — whole plan only when no stop is named: "ابي شي ثاني"، "ودي بشي مختلف"، "عطني اقتراح غير". */
+const SOMETHING_ELSE = /(شي|شيء|اشياء|فكره|اقتراح|اقتراحات)\s*(ثاني|ثانيه|غير|غيره|مختلف|مختلفه|جديد|جديده)/;
+/** Every place: "غيرلي الأماكن"، "مو عاجبني ولا مكان"، "طفشت من هالأماكن"، "بدلها كلها"، "ما عجبني شيء". */
+const DISLIKE = /(غير|بدل|طفشت|مليت|زهقت|ما عجب|ماعجب|مو عاجب|ما حبيت|ماحبيت|ما ابي|مابي)/;
+const ALL_PLACES = /(اماكن|ولا مكان|ولا وحده|كلها|كلهم|كل شي|ولا شي|عجبني شي|عاجبني شي)/;
+const ALL_PLACES_EN = /(other|different|new) (places|spots)|change (all|every|them all)/;
+const EVEN_LOCKED = /حتي\s+(\S+\s+)?(ال)?مثبت|حتي\s+(اللي|الي)\s+ثبت|مع المثبت/;
+const NOT_THIS = /(مو|مب|ماهي|مهي)\s*(هذي|هذا|كذا|اللي ببالي|اللي ابيه)|مو هذي الفكره/;
+
+const DIRECTIONS: [RegExp, (lat: number, lng: number) => boolean][] = [
+  [/شمال/, (lat) => lat > RIYADH_CENTER.lat + 0.03],
+  [/جنوب/, (lat) => lat < RIYADH_CENTER.lat - 0.03],
+  [/شرق/, (_, lng) => lng > RIYADH_CENTER.lng + 0.03],
+  [/غرب/, (_, lng) => lng < RIYADH_CENTER.lng - 0.03],
+];
+
+/** Plan-wide corrections stated without naming a stop. */
+function constraintEdit(text: string, ctx: IntentContext): ConstraintEdit | undefined {
+  const e: ConstraintEdit = {};
+  const add = (t: PlaceTag) => (e.addTags = [...new Set([...(e.addTags ?? []), t])]);
+  if (/(ارخص|رخيص|اقتصادي|غالي|غاليه|ميزانيه|اسعار مناسبه)/.test(text)) add("budget");
+  if (/(اهدا|اهدي|هادي|هادئ|هدوء|زحمه|مزحوم)/.test(text)) add("quiet");
+  if (/(عوائل|عائلي|اطفال|عيال)/.test(text)) add("family");
+  if (/(بنات|نسائي|نساء|حريم|سيدات)/.test(text)) {
+    if (ctx.planSteps.some((s) => s.category === "gym")) e.women = true;
+    if (ctx.planSteps.some((s) => s.category !== "gym")) add("family");
+  }
+  if (/(اقرب|قريب اكثر|بعيد|بعيده)/.test(text)) e.nearer = true;
+  else if (/(تقييم|الافضل|احسن)/.test(text)) e.priority = "rating";
+  const district = findDistrict(text);
+  if (district) e.district = district;
+  return Object.keys(e).length ? e : undefined;
+}
+
 const PLAN_IDEAS = [
   { label: "نادي ← كوفي ← مطعم", value: "نادي وبعده كوفي قريب منه وبعده مطعم قريب من الكوفي" },
   { label: "كوفي ← عشا", value: "كوفي وبعده عشا قريب منه" },
@@ -148,8 +204,22 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
   const text = normalize(raw);
   const engine = "rules" as const;
 
+  if (UNDO.test(text))
+    return ctx.canUndo
+      ? { engine, reply: "رجّعت لك الخطة اللي قبل.", action: { type: "undo" } }
+      : { engine, reply: "ما فيه تغيير سابق أرجع له.", action: { type: "chat" } };
+
   // 1) Plan edits
   if (ctx.planSteps.length) {
+    const named = findCategories(text).filter((c) => ctx.planSteps.some((s) => s.category === c.category));
+    const includeLocked = EVEN_LOCKED.test(text);
+    // B) the itinerary itself
+    if (WHOLE_PLAN.test(text) || (SOMETHING_ELSE.test(text) && !named.length))
+      return { engine, reply: "أبشر، بسوي لك خطة مختلفة.", action: { type: "regenerate", ...(includeLocked ? { includeLocked } : {}) } };
+    // A) every place, same activities
+    if ((DISLIKE.test(text) && ALL_PLACES.test(text)) || ALL_PLACES_EN.test(text) || (includeLocked && /(غير|بدل)/.test(text)))
+      return { engine, reply: "أبشر، بغيّر الأماكن كلها.", action: { type: "replace_all", ...(includeLocked ? { includeLocked } : {}) } };
+
     const idx = targetIndex(text, ctx);
     const valid = idx !== undefined && idx >= 0 && idx < ctx.planSteps.length;
     if (/(فك التثبيت|لا تثبت|الغ التثبيت)/.test(text) && valid)
@@ -184,6 +254,34 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
           engine,
           reply: onlyThis ? "أبشر، بغيّره هو بس وأخلي الباقي مثل ما هو." : "أبشر، بغيّره وأحدّث اللي بعده عشان يكون قريب منه.",
           action: { type: "modify", op: "replace", index: idx!, onlyThis },
+        };
+    }
+    // D) plan-wide corrections ("أرخص"، "أهدأ"، "خليها بالملقا") when no activity is named
+    if (!findCategories(text).length) {
+      const edit = constraintEdit(text, ctx);
+      if (edit) return { engine, reply: "أبشر، بعدّل الخطة.", action: { type: "constraints", edit } };
+      const region = DIRECTIONS.find(([re]) => re.test(text));
+      if (region) {
+        const options = Object.entries(DISTRICTS)
+          .filter(([, c]) => region[1](c.lat, c.lng))
+          .slice(0, 5)
+          .map(([d]) => ({ label: d, value: `خليها في حي ${d}` }));
+        if (options.length) return { engine, reply: "أي حي يناسبك؟", action: { type: "clarify", question: "أي حي يناسبك؟", options, pending: {} } };
+      }
+      if (NOT_THIS.test(text) || /(غير|بدل)/.test(text))
+        return {
+          engine,
+          reply: "وش اللي ودك يتغير؟",
+          action: {
+            type: "clarify",
+            question: "وش اللي ودك يتغير؟",
+            options: [
+              { label: "أماكن غيرها", value: "غيرلي الأماكن" },
+              { label: "خطة مختلفة", value: "سو لي خطة ثانية" },
+              ...ctx.planSteps.slice(0, 3).map((s) => ({ label: `غيّر ال${CATEGORY_META[s.category].label}`, value: `غير ال${CATEGORY_META[s.category].label}` })),
+            ],
+            pending: {},
+          },
         };
     }
     if (/(ضيف|اضف|زيد|زود|وبعدها|وبعده)/.test(text)) {

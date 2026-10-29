@@ -17,6 +17,14 @@ export type BuildInput = {
   locked?: boolean[];
   excluded?: string[][];
   nearest?: boolean[]; // "أبي كوفي أقرب": pick the closest candidate for that step
+  /** Plan-wide: never pick these ids for any step, unless a step would otherwise have no place at all. */
+  avoid?: string[];
+  /** Plan-wide: venue names to skip like `avoid` (another branch of a rejected chain is not a new place). */
+  avoidNames?: string[];
+  /** Plan-wide: places already shown this session; ranked after unseen ones ("give me something new"). */
+  seen?: string[];
+  /** Same length as steps; used only when a step has no eligible candidate (e.g. "replace all" ran out of options). */
+  fallback?: ({ step: StepSpec; place: Place } | null)[];
 };
 
 const WEIGHTS: Record<Priority, { prox: number; rating: number }> = {
@@ -80,6 +88,9 @@ function reasonFor(p: Place, step: StepSpec, anchorLabel: string, distKm: number
 export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
   const stops: PlanStop[] = [];
   const used = new Set<string>();
+  const avoid = new Set(input.avoid ?? []);
+  const avoidNames = new Set(input.avoidNames ?? []);
+  const seen = new Set(input.seen ?? []);
   const district = input.district && DISTRICTS[input.district] ? input.district : undefined;
   // Database and demo searches don't depend on the previous stop, so every step is fetched at once.
   // (Google Places searches near the previous stop, so it stays sequential.)
@@ -87,19 +98,26 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     searchPlaces({ category: step.category, subcategory: step.subcategory, neighborhood, query: step.placeName, near: near ?? input.origin });
   const prefetched = placesMode() === "google" ? [] : await Promise.all(input.steps.map((step, i) => search(step, i === 0 ? district : undefined)));
   for (let i = 0; i < input.steps.length; i++) {
-    const step = input.steps[i];
+    const fallback = input.fallback?.[i];
     const prev = stops[stops.length - 1]?.place;
     const anchor = prev ? prev.location : input.origin;
     const anchorLabel = prev ? anchorName(prev) : input.originLabel;
     const excluded = input.excluded?.[i] ?? [];
-    const wanted = wantedTags(step, input);
     const kept = input.keep?.[i];
     const neighborhood = !prev ? district : undefined;
 
     // a prefetched list is reusable when it was fetched with the same district filter
-    const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(step, neighborhood, anchor);
+    const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(input.steps[i], neighborhood, anchor);
 
     let eligible = candidates.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id);
+    const fresh = eligible.filter((p) => !avoid.has(p.id));
+    if (fresh.length) eligible = fresh;
+    const otherNames = eligible.filter((p) => !avoidNames.has(p.name));
+    if (otherNames.length) eligible = otherNames;
+    // Nothing left for this step: keep what it had (when the caller allows it) instead of dropping the stop.
+    const fallbackOnly = !kept && !eligible.length && fallback && !used.has(fallback.place.id);
+    const step = fallbackOnly ? fallback.step : input.steps[i];
+    const wanted = wantedTags(step, input);
     // "قريب من اللي قبله": keep each hop short when the data allows it.
     if (!step.placeName) {
       for (const km of prev ? [3, 6, 12] : [6, 12]) {
@@ -110,14 +128,15 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
         }
       }
     }
-    const pool = input.nearest?.[i]
+    const ranked = input.nearest?.[i]
       ? eligible.sort((a, b) => haversineKm(anchor, a.location) - haversineKm(anchor, b.location))
       : eligible
           .map((p) => ({ p, s: score(p, anchor, step, wanted, input) }))
           .sort((a, b) => b.s - a.s)
           .map((x) => x.p);
+    const pool = seen.size ? [...ranked.filter((p) => !seen.has(p.id)), ...ranked.filter((p) => seen.has(p.id))] : ranked;
 
-    const place = kept ?? pool.shift();
+    const place = kept ?? pool.shift() ?? (fallbackOnly ? fallback.place : undefined);
     if (!place) continue;
     used.add(place.id);
     const distKm = haversineKm(anchor, place.location);

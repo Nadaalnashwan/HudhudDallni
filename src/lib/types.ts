@@ -94,6 +94,8 @@ export type Plan = {
   stops: PlanStop[];
   route?: RouteResult;
   startedAt?: string;
+  tags?: PlaceTag[]; // plan-wide tags it was built with ("هادي", "أسعار مناسبة")
+  goal?: string; // the user's words that created this plan, so later edits can go back to the original idea
 };
 
 export type Preferences = {
@@ -125,7 +127,24 @@ export type AssistantAction =
       onlyThis?: boolean; // "غير المطعم بس" — keep the stops after it
     }
   | { type: "add"; step: StepSpec; after?: number } // insert after this stop index; default: end
+  /** Same activities and count, a different place for every unlocked stop (all of them with includeLocked). */
+  | { type: "replace_all"; includeLocked?: boolean }
+  /** A different itinerary built from the original goal; none of the current places are reused when others exist. */
+  | { type: "regenerate"; request?: ParsedRequest; includeLocked?: boolean }
+  /** Rebuild the unlocked stops under changed plan-wide constraints. */
+  | { type: "constraints"; edit: ConstraintEdit }
+  | { type: "undo" } // restore the plan before the last change
   | { type: "chat" };
+
+/** Plan-wide corrections ("أرخص", "أهدأ", "خليها بالملقا", "أبي أماكن تناسب البنات"). */
+export type ConstraintEdit = {
+  district?: string;
+  priority?: Priority;
+  addTags?: PlaceTag[];
+  removeTags?: PlaceTag[];
+  women?: boolean; // women-only gyms
+  nearer?: boolean; // keep every hop as short as the data allows
+};
 
 export type ParsedRequest = {
   steps: StepSpec[];

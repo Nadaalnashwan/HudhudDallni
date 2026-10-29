@@ -24,7 +24,7 @@ const uid = () => crypto.randomUUID();
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  text: "هلا والله! أنا Mishwarak، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
+  text: "هلا والله! أنا مشوارك، مساعدك في هدهد.\nقول لي وش ودك تسوي وأنا أدور لك الأماكن وأرتب طلعتك على الخريطة.",
 };
 const QUICK_CATEGORIES: Category[] = ["cafe", "restaurant", "gym", "dessert", "park", "mall", "entertainment"];
 
@@ -564,18 +564,18 @@ export default function HudhudApp() {
 
       {/* Mishwarak: bottom sheet on mobile, side panel on desktop. Kept mounted while hidden so nothing resets. */}
       <aside
-        aria-label="Mishwarak"
+        aria-label="مشوارك"
         aria-hidden={!panelOpen}
         className={`absolute inset-x-0 bottom-0 z-[1100] h-[55dvh] flex-col rounded-t-3xl border-line bg-surface shadow-[0_-8px_30px_rgba(0,0,0,.12)] md:inset-y-0 md:left-auto md:right-0 md:h-full md:w-[420px] md:rounded-none md:border-l ${
           panelOpen ? "flex" : "hidden"
         }`}
       >
-        <SheetHandle onClose={() => setPanelOpen(false)} label="إغلاق Mishwarak" />
+        <SheetHandle onClose={() => setPanelOpen(false)} label="إغلاق مشوارك" />
         <div className="flex items-center justify-between gap-2 px-4 pb-1 md:pt-3">
           <h2>
             <MishwarakLogo />
           </h2>
-          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق Mishwarak">
+          <button onClick={() => setPanelOpen(false)} className="flex size-8 items-center justify-center rounded-full bg-background text-muted" aria-label="إغلاق مشوارك">
             <X className="size-4" />
           </button>
         </div>
@@ -749,7 +749,7 @@ function SettingsSheet({
           </div>
           <button onClick={onStats} className={row}>
             <span className="inline-flex items-center gap-2">
-              <BarChart3 className="size-4 text-brand-600" aria-hidden /> مؤشرات Mishwarak
+              <BarChart3 className="size-4 text-brand-600" aria-hidden /> مؤشرات مشوارك
             </span>
             <ChevronLeft className="size-4 text-muted" aria-hidden />
           </button>
@@ -758,7 +758,7 @@ function SettingsSheet({
         <h3 className="pb-2 pt-5 font-bold">تفضيلاتي</h3>
         <div className="space-y-3">
           <label className={row}>
-            <span>أسمح لـ Mishwarak يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
+            <span>أسمح لـ مشوارك يحفظ ملاحظاتي ويستخدمها في الاقتراحات</span>
             <input type="checkbox" checked={prefs.consent} onChange={(e) => onChange({ ...prefs, consent: e.target.checked })} className="size-5 shrink-0 accent-brand-500" />
           </label>
           <div className="space-y-2 text-sm">

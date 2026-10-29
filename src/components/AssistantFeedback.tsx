@@ -40,7 +40,7 @@ export default function AssistantFeedbackSheet({ planId, onDone }: { planId?: st
   const submit = async () => {
     setSaving(true);
     const where = await saveAssistantFeedback({ helpful: helpful!, usedPlace: usedPlace!, improvements }, planId);
-    onDone(where === "supabase" ? "شكراً على رأيك في Mishwarak! 🙏" : "شكراً على رأيك! انحفظ على جهازك.");
+    onDone(where === "supabase" ? "شكراً على رأيك في مشوارك! 🙏" : "شكراً على رأيك! انحفظ على جهازك.");
   };
 
   return (
@@ -48,23 +48,23 @@ export default function AssistantFeedbackSheet({ planId, onDone }: { planId?: st
       <div className="w-full space-y-4 rounded-t-3xl border border-line bg-surface p-5 md:max-w-md md:rounded-3xl">
         <div className="flex items-center justify-between">
           <p className="inline-flex items-center gap-1.5 font-bold">
-            <Sparkles className="size-4 text-brand-600" aria-hidden /> رأيك في Mishwarak
+            <Sparkles className="size-4 text-brand-600" aria-hidden /> رأيك في مشوارك
           </p>
           <button onClick={() => onDone()} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="تخطي">
             <X className="size-4" />
           </button>
         </div>
         <div className="space-y-2">
-          <p>هل ساعدك Mishwarak في اختيار المكان أو تخطيط طلعتك؟</p>
+          <p>هل ساعدك مشوارك في اختيار المكان أو تخطيط طلعتك؟</p>
           <Choice value={helpful} onChange={setHelpful} options={[{ value: "yes", label: "نعم" }, { value: "partly", label: "جزئيًا" }, { value: "no", label: "لا" }]} />
         </div>
         <div className="space-y-2">
-          <p>هل استخدمت أحد الأماكن اللي اقترحها لك Mishwarak؟</p>
+          <p>هل استخدمت أحد الأماكن اللي اقترحها لك مشوارك؟</p>
           <Choice value={usedPlace} onChange={setUsedPlace} options={[{ value: "yes", label: "نعم" }, { value: "no", label: "لا" }, { value: "not_yet", label: "لسه ما رحت" }]} />
         </div>
         <div className="space-y-2">
           <p>
-            وش ممكن نحسن في Mishwarak؟ <span className="text-xs text-muted">(اختياري)</span>
+            وش ممكن نحسن في مشوارك؟ <span className="text-xs text-muted">(اختياري)</span>
           </p>
           <div className="flex flex-wrap gap-2">
             {IMPROVEMENTS.map((o) => {
@@ -82,7 +82,7 @@ export default function AssistantFeedbackSheet({ planId, onDone }: { planId?: st
             })}
           </div>
         </div>
-        <p className="text-[11px] text-muted">رأيك هنا عن Mishwarak نفسه، ما ينشر كتقييم لأي مكان، ويبقى خاص فيك.</p>
+        <p className="text-[11px] text-muted">رأيك هنا عن مشوارك نفسه، ما ينشر كتقييم لأي مكان، ويبقى خاص فيك.</p>
         <div className="flex gap-2">
           <button disabled={!helpful || !usedPlace || saving} onClick={submit} className="flex-1 rounded-xl bg-brand-500 py-2 text-white disabled:opacity-40">
             {saving ? <Spinner /> : "إرسال"}
@@ -111,7 +111,7 @@ export function AssistantStatsSheet({ onClose }: { onClose: () => void }) {
       <div onClick={(e) => e.stopPropagation()} className="w-full space-y-3 rounded-t-3xl border border-line bg-surface p-5 md:max-w-md md:rounded-3xl">
         <div className="flex items-center justify-between">
           <h2 className="inline-flex items-center gap-2 text-lg font-bold">
-            <BarChart3 className="size-5 text-brand-600" aria-hidden /> مؤشرات Mishwarak
+            <BarChart3 className="size-5 text-brand-600" aria-hidden /> مؤشرات مشوارك
           </h2>
           <button onClick={onClose} className="flex size-8 items-center justify-center rounded-full text-muted hover:bg-background" aria-label="إغلاق">
             <X className="size-4" />
@@ -126,11 +126,11 @@ export function AssistantStatsSheet({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 gap-2">
               <div className={card}>
                 <p className="text-2xl font-bold">{stats.plans_started}</p>
-                <p className="text-xs text-muted">طلعات بدأت بمساعدة Mishwarak</p>
+                <p className="text-xs text-muted">طلعات بدأت بمساعدة مشوارك</p>
               </div>
               <div className={card}>
                 <p className="text-2xl font-bold">{stats.responses}</p>
-                <p className="text-xs text-muted">ردود على تقييم Mishwarak</p>
+                <p className="text-xs text-muted">ردود على تقييم مشوارك</p>
               </div>
               <div className={card}>
                 <p className="text-2xl font-bold">{pct(stats.helpful_yes, stats.responses)}</p>

@@ -84,7 +84,7 @@ export default function AssistantChat({ messages, busy, disabled = busy, chosenI
         {busy && (
           <div className="flex justify-end">
             <div className="flex items-center gap-2 rounded-2xl bg-background px-3 py-2 text-sm text-muted">
-              <Spinner /> Mishwarak يدوّر لك...
+              <Spinner /> مشوارك يدوّر لك...
             </div>
           </div>
         )}

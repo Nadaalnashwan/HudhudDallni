@@ -90,7 +90,6 @@ export default function HudhudApp() {
   const [feedbackOn, setFeedbackOn] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false); // map first; the assistant opens on demand
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const [quotaNoticeShown, setQuotaNoticeShown] = useState(false);
   const [feedbackAsk, setFeedbackAsk] = useState<{ planId?: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   // Plans before each change (newest last), so "تراجع" can restore the map, cards and route together.
@@ -433,10 +432,6 @@ export default function HudhudApp() {
       });
       const out = (await res.json()) as AssistantResponse;
       const a = out.action;
-      if (out.fallback === "quota" && !quotaNoticeShown) {
-        setQuotaNoticeShown(true);
-        say({ role: "assistant", text: "الفهم الذكي متوقف مؤقتاً، فبكمل معك بالفهم الأساسي." });
-      }
       applyLearned(out.learned);
       if (a.type === "clarify") {
         const p = a.pending;

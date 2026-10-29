@@ -124,6 +124,35 @@ describe("replace the entire plan", () => {
     expect(next.stops.map((s) => s.step.category)).toEqual(["gym", "cafe", "restaurant"]);
     for (const id of ids(next)) expect(ids(plan)).not.toContain(id);
   });
+
+  it("without a new request still changes each activity's type where the category has others", () => {
+    const plan: Plan = {
+      id: "p",
+      origin: DISTRICTS["الصحافة"],
+      originLabel: "موقعك",
+      priority: "balanced",
+      stops: [
+        { step: { category: "cafe", subcategory: "quiet" }, place: { ...DEMO_PLACES[0], subcategory: "quiet" }, alternatives: [], excluded: [], locked: false, reason: "", anchorLabel: "موقعك" },
+        { step: { category: "restaurant", subcategory: "burger" }, place: { ...DEMO_PLACES[1], subcategory: "burger" }, alternatives: [], excluded: [], locked: false, reason: "", anchorLabel: "المقهى" },
+      ],
+    };
+    const { steps } = regenerateInput(plan, undefined);
+    expect(steps.map((s) => s.category)).toEqual(["cafe", "restaurant"]);
+    expect(steps[0].subcategory).not.toBe("quiet");
+    expect(steps[1].subcategory).not.toBe("burger");
+  });
+});
+
+describe("a district with nothing new left", () => {
+  it("looks just outside the district instead of keeping or repeating a place", async () => {
+    const input: BuildInput = { ...base, steps: [{ category: "gym", subcategory: "fitness" }], district: "الصحافة" };
+    const first = await buildStops(input);
+    const inDistrict = (await buildStops({ ...input, excluded: [[first[0].place.id]] }))[0];
+    const next = await buildStops({ ...input, excluded: [[first[0].place.id]], avoid: [first[0].place.id, inDistrict?.place.id].filter(Boolean) as string[] });
+    expect(next).toHaveLength(1);
+    expect([first[0].place.id, inDistrict?.place.id]).not.toContain(next[0].place.id);
+    expect(haversineKm(DISTRICTS["الصحافة"], next[0].place.location)).toBeLessThan(12);
+  });
 });
 
 describe("replace one stop", () => {

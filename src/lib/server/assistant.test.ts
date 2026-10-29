@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PREFS } from "../store";
 import type { IntentContext } from "../intent";
+import type { AssistantAction } from "../types";
 
 const gemini = vi.hoisted(() => {
   class GeminiQuotaError extends Error {}
@@ -8,7 +9,7 @@ const gemini = vi.hoisted(() => {
 });
 vi.mock("./gemini", () => gemini);
 
-const { answer, userPayload } = await import("./assistant");
+const { answer, reconcile, userPayload } = await import("./assistant");
 const { changesPlan } = await import("./intentSchema");
 
 const ctx: IntentContext = {
@@ -86,6 +87,15 @@ describe("answer: when Gemini is unavailable", () => {
     expect(res).toMatchObject({ engine: "rules", fallback: "quota", action: { type: "regenerate" } });
   });
 
+  it("waits less for Gemini when the rules already understood the request", async () => {
+    gemini.geminiJson.mockResolvedValue({ intent: "chat" });
+    await answer({ message: "غيرلي الأماكن", context: ctx });
+    await answer({ message: "مو هذي الفكرة اللي ببالي", context: ctx });
+    const [clear, unclear] = gemini.geminiJson.mock.calls.map((c) => c[3]);
+    expect(clear).toBeLessThan(3_500);
+    expect(unclear).toBeUndefined();
+  });
+
   it("treats unparseable JSON as invalid output", async () => {
     gemini.geminiJson.mockRejectedValue(new SyntaxError("Unexpected token"));
     expect((await answer({ message: "طيب", context: ctx })).fallback).toBe("invalid");
@@ -97,5 +107,23 @@ describe("answer: when Gemini is unavailable", () => {
     expect(res).toMatchObject({ engine: "rules", action: { type: "replace_all" } });
     expect(res.fallback).toBeUndefined();
     expect(gemini.geminiJson).not.toHaveBeenCalled();
+  });
+});
+
+describe("reconcile: Gemini vs unambiguous rules", () => {
+  it("never answers a new request with an undo", () => {
+    const plan: AssistantAction = { type: "plan", request: { steps: [{ category: "gym" }], tags: [] } };
+    expect(reconcile({ type: "undo" }, plan)).toBe(plan);
+  });
+
+  it("keeps 'a different plan' and 'other places' apart", () => {
+    expect(reconcile({ type: "replace_all" }, { type: "regenerate" })).toMatchObject({ type: "regenerate" });
+    expect(reconcile({ type: "regenerate" }, { type: "replace_all", includeLocked: true })).toMatchObject({ type: "replace_all", includeLocked: true });
+  });
+
+  it("otherwise trusts Gemini", () => {
+    const regen: AssistantAction = { type: "regenerate", request: { steps: [{ category: "park" }], tags: [] } };
+    expect(reconcile(regen, { type: "replace_all" })).toBe(regen);
+    expect(reconcile({ type: "chat" }, { type: "clarify", question: "?", options: [], pending: {} })).toEqual({ type: "chat" });
   });
 });

@@ -55,6 +55,15 @@ describe("buildStops (offline demo data)", () => {
     expect(next[1].place.id).not.toBe(rejected);
   });
 
+  it("picks a mixed gym for a plain «نادي» and a women-only one only when asked", async () => {
+    for (const district of Object.values(DISTRICTS)) {
+      const [plain] = await buildStops({ ...base, origin: district, steps: [{ category: "gym" }] });
+      expect(plain.place.subcategory).not.toBe("women");
+    }
+    const [women] = await buildStops({ ...base, steps: [{ category: "gym", subcategory: "women" }] });
+    expect(women.place.subcategory).toBe("women");
+  });
+
   it("picks the closest candidate when asked for a nearer option", async () => {
     const [stop] = await buildStops({ ...base, steps: [{ category: "cafe" }], nearest: [true] });
     for (const alt of stop.alternatives) {

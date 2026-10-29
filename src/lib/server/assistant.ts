@@ -2,7 +2,7 @@ import "server-only";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { parseWithRules, type IntentContext } from "../intent";
 import { MAX_STOPS } from "../planEdits";
-import type { AssistantResponse, Category, PlaceTag, Preferences, Subcategory } from "../types";
+import type { AssistantAction, AssistantResponse, Category, PlaceTag, Preferences, Subcategory } from "../types";
 import { geminiEnabled, geminiJson, GeminiQuotaError } from "./gemini";
 import { INTENTS, validateOutput } from "./intentSchema";
 
@@ -14,6 +14,9 @@ const SUBS = Object.keys(SUBCATEGORY_META) as Subcategory[];
 const SUB_DOC = CATS.map((c) => `${c}: ${SUBS.filter((s) => SUBCATEGORY_META[s].category === c).map((s) => `${s}=${SUBCATEGORY_META[s].label}`).join("، ") || "—"}`).join("\n");
 const HISTORY_TURNS = 8;
 const TURN_CHARS = 280;
+
+/** Gemini usually answers in 1–2 s; past this the rules answer a request they already understood. */
+const QUICK_BUDGET_MS = 2_000;
 
 export const SYSTEM = `أنت "مشوارك" (Mishwarak)، المساعد الذكي داخل تطبيق هدهد السعودي للخرائط. تفهم اللهجة السعودية والفصحى والإنجليزية، وترد بلهجة سعودية ودودة ومختصرة (جملة وحدة غالباً).
 دورك فهم قصد المستخدم بالمعنى، مو بالكلمات الحرفية. اختيار الأماكن والمسافات والتقييمات يسويه النظام من قاعدة البيانات — لا تذكر أسماء أماكن ولا تقييمات ولا مسافات، ولا تقول إنك غيّرت شيء: النظام يكتب للمستخدم وش تغيّر فعلاً.
@@ -110,6 +113,20 @@ export function userPayload(message: string, ctx: IntentContext, preferences?: P
 }
 
 /**
+ * Guards the two readings that would make a misleading change. The rules only return a new plan,
+ * "a different plan" or "other places" for unambiguous wording, so when they are that sure and
+ * Gemini disagrees on exactly these, the rules win.
+ */
+export function reconcile(gemini: AssistantAction, rules: AssistantAction): AssistantAction {
+  // "undo" would bring back an old plan while the user just asked for a new one
+  if (gemini.type === "undo" && rules.type === "plan") return rules;
+  // "غيرلي الخطة" is about the itinerary, "غيرلي الأماكن" about the venues
+  if (gemini.type === "replace_all" && rules.type === "regenerate") return { ...rules, includeLocked: rules.includeLocked || gemini.includeLocked };
+  if (gemini.type === "regenerate" && !gemini.request && rules.type === "replace_all") return { ...rules, includeLocked: rules.includeLocked || gemini.includeLocked };
+  return gemini;
+}
+
+/**
  * Gemini decides by meaning; its JSON is validated (Zod + plan checks) before anything runs.
  * Without a usable answer the rule-based parser responds — and it only changes a plan when the
  * phrasing is unambiguous, otherwise it asks.
@@ -120,13 +137,16 @@ export async function answer(req: AssistantRequest): Promise<AssistantResponse> 
   if (!geminiEnabled()) return rules;
 
   try {
-    const out = await geminiJson<unknown>(SYSTEM, userPayload(req.message, ctx, req.preferences));
+    // When the rules already have a clear answer, don't keep the user waiting on a slow model.
+    const clear = rules.action.type !== "clarify" && rules.action.type !== "chat";
+    const out = await geminiJson<unknown>(SYSTEM, userPayload(req.message, ctx, req.preferences), 0.1, clear ? QUICK_BUDGET_MS : undefined);
     const v = validateOutput(out, ctx);
     if (!v.ok) {
       console.error("Gemini output rejected, using rules:", v.reason);
       return { ...rules, fallback: "invalid" };
     }
-    return { reply: v.value.reply ?? rules.reply, action: v.value.action, engine: "gemini", learned: v.value.learned };
+    const action = reconcile(v.value.action, rules.action);
+    return { reply: action === v.value.action ? v.value.reply ?? rules.reply : rules.reply, action, engine: "gemini", learned: v.value.learned };
   } catch (e) {
     console.error("Gemini failed, using rules:", (e as Error).message);
     return { ...rules, fallback: e instanceof GeminiQuotaError ? "quota" : e instanceof SyntaxError ? "invalid" : "unavailable" };

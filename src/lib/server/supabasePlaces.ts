@@ -33,10 +33,12 @@ const COLUMNS = `${LEGACY_COLUMNS},location_status,location_source`;
 let columns = COLUMNS;
 
 async function select<T>(run: (cols: string) => PromiseLike<{ data: T; error: { code?: string; message: string } | null }>) {
-  const res = await run(columns);
-  if (res.error?.code === "42703" && columns !== LEGACY_COLUMNS) {
+  const used = columns;
+  const res = await run(used);
+  // compare with the columns this call used: parallel searches can fail before any of them switches
+  if (res.error?.code === "42703" && used !== LEGACY_COLUMNS) {
     columns = LEGACY_COLUMNS;
-    return run(columns);
+    return run(LEGACY_COLUMNS);
   }
   return res;
 }

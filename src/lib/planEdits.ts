@@ -1,6 +1,6 @@
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "./catalog";
+import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
 import { formatKm } from "./geo";
-import type { ConstraintEdit, LatLng, ParsedRequest, Place, Plan, PlaceTag, Priority, StepSpec } from "./types";
+import type { ConstraintEdit, LatLng, ParsedRequest, Place, Plan, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
 /**
  * Turns a plan-change decision into planner input, and the planner's actual result into chat
@@ -75,6 +75,13 @@ export function replaceAllInput(plan: Plan, o: { includeLocked?: boolean; reject
   };
 }
 
+/** Without a new request (Gemini unavailable), a "different plan" still changes each activity's type where its category has others. */
+function varied(step: StepSpec, current?: Subcategory): StepSpec {
+  if (step.placeName) return step;
+  const others = subcategoriesOf(step.category).filter((x) => x !== step.subcategory && x !== current && x !== "women");
+  return others.length ? { ...step, subcategory: others[0] } : step;
+}
+
 /**
  * "سو لي خطة ثانية": a new itinerary. Locked stops survive (unless includeLocked) — on the first new
  * step of the same activity, or inserted at their old position. No current place is reused while
@@ -82,7 +89,7 @@ export function replaceAllInput(plan: Plan, o: { includeLocked?: boolean; reject
  */
 export function regenerateInput(plan: Plan, request: ParsedRequest | undefined, o: { includeLocked?: boolean; rejected?: string[]; seen?: string[] } = {}): StepInput & { settings: PlanSettings } {
   const base = settingsOf(plan);
-  const req = request ?? { steps: plan.stops.map((s) => s.step), district: plan.district, priority: plan.priority, tags: base.tags };
+  const req = request ?? { steps: plan.stops.map((s) => varied(s.step, s.place.subcategory)), district: plan.district, priority: plan.priority, tags: base.tags };
   const tags = uniq(req.tags ?? []);
   const district = req.district && DISTRICTS[req.district] ? req.district : undefined;
   const settings: PlanSettings = district

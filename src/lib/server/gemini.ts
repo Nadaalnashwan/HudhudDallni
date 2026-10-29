@@ -25,7 +25,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const MAX_ATTEMPTS = 3;
 const HEDGE_MS = 1_500; // start a parallel attempt if the current one hasn't answered by then
 // Total wait, enforced client-side (the API rejects server deadlines under 10 s).
-const BUDGET_MS = 3_500;
+export const BUDGET_MS = 3_500;
 
 const clients = new Map<string, GoogleGenAI>();
 const badKeys = new Set<number>();
@@ -69,7 +69,8 @@ const thinking = () => {
   return {};
 };
 
-async function generate(system: string, user: string, opts: { json: boolean; temperature: number }): Promise<string> {
+async function generate(system: string, user: string, opts: { json: boolean; temperature: number; budgetMs?: number }): Promise<string> {
+  const budget = opts.budgetMs ?? BUDGET_MS;
   if (!geminiEnabled()) throw new GeminiUnavailableError("no usable Gemini key");
   if (Date.now() < quotaUntil) throw new GeminiQuotaError(`quota cooldown, ${Math.ceil((quotaUntil - Date.now()) / 1000)}s left`);
 
@@ -90,8 +91,8 @@ async function generate(system: string, user: string, opts: { json: boolean; tem
       settle();
     };
     const deadline = setTimeout(
-      () => finish(() => reject(new GeminiUnavailableError(`no Gemini answer within ${BUDGET_MS} ms (${attempts} attempts)`))),
-      BUDGET_MS,
+      () => finish(() => reject(new GeminiUnavailableError(`no Gemini answer within ${budget} ms (${attempts} attempts)`))),
+      budget,
     );
 
     const launch = () => {
@@ -150,8 +151,8 @@ async function generate(system: string, user: string, opts: { json: boolean; tem
   });
 }
 
-export async function geminiJson<T>(system: string, user: string, temperature = 0.1): Promise<T> {
-  const text = await generate(system, user, { json: true, temperature });
+export async function geminiJson<T>(system: string, user: string, temperature = 0.1, budgetMs?: number): Promise<T> {
+  const text = await generate(system, user, { json: true, temperature, budgetMs });
   // tolerate a fenced block if the model adds one
   return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")) as T;
 }

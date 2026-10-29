@@ -49,7 +49,7 @@ This repository contains the working prototype built for the *AI Feature Innovat
   <img src="docs/screenshots/plan-light.webp" alt="A three-stop outing plan (gym, café, burger restaurant) drawn as a road route on the map, with the plan cards in the assistant panel">
 </picture>
 
-The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it uses the offline demo dataset and the rule-based dialect parser, and it labels both in the interface.
+The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it uses the offline demo dataset and the rule-based dialect parser, and says so under Settings (الإعدادات).
 
 > [!NOTE]
 > Dallni is an independent student concept. It is **not** affiliated with, endorsed by, or connected to Hudhud. All place data in the demo database is synthetic.
@@ -61,7 +61,7 @@ The [live demo](https://hudhud-dallni.vercel.app) runs without any API keys: it 
 | **Saudi-dialect understanding** | Turns requests like "a quiet café to study in Al Malqa" into structured filters (category, type, district, ranking priority). It asks one clarifying question only when a request is genuinely ambiguous. |
 | **Multi-stop planning** | Plans up to six stops in the user's own order. Each stop is searched around the stop before it, so the outing stays compact. |
 | **Conversational editing** | Understands edits such as "change the café", "a closer café", "make the restaurant Italian", "lock the gym", "add dessert after the gym", and "remove the restaurant", and rebuilds only what changed. |
-| **Explainable picks** | Every stop shows its rating, its straight-line distance from the previous stop, and why it was chosen. Alternatives appear as secondary pins on the map. |
+| **Explainable picks** | Every stop shows its rating, its approximate distance from the previous stop, and why it was chosen. Alternatives appear as secondary pins on the map. |
 | **In-app trip** | Starts from the user's GPS position or a point they choose, follows a road route, shows basic Arabic turn guidance, and moves through the stops in order. |
 | **Consent-based reviews** | After a visit, the user rates it. Gemini drafts a short review from the user's own words, and it is published only after the user explicitly agrees. |
 | **Personalization with consent** | With a separate opt-in, Dallni remembers stated tastes (preferred cuisines, café types, districts, budget, things to avoid). Users can view or erase them from the settings sheet. |
@@ -89,7 +89,7 @@ flowchart LR
 1. **Understand.** Gemini extracts a structured intent: the ordered steps, each step's category and subcategory, the district, the ranking priority, and any edit command. The server checks the response against the app's categories, subcategories, tags, and districts and drops anything invented. If Gemini is not configured, hits its quota, or returns something unusable, a rule-based Saudi-dialect parser answers instead.
 2. **Retrieve.** Each step becomes an exact database query on category, optional subcategory, and optional district.
 3. **Rank.** The planner scores candidates by proximity to the previous stop, rating, popularity, requested tags, and consented preferences. It prefers short hops (within 3, 6, then 12 km) when the data allows.
-4. **Route.** The ordered stops are routed by road through Google Routes when a key is set, otherwise through OSRM on OpenStreetMap data. If routing fails, the map draws straight lines and says clearly that they are not driving distances.
+4. **Route.** The ordered stops are routed by road through Google Routes when a key is set, otherwise through OSRM on OpenStreetMap data. If routing fails, the map draws straight lines, says that road routing failed, and marks distances as approximate.
 5. **Learn, with consent.** Visit feedback and stated preferences are saved only after explicit opt-in, and only for that user.
 
 ### Graceful degradation
@@ -242,7 +242,7 @@ docs/screenshots/               README images
 - **Anonymous by default.** Each browser gets an anonymous Supabase session. No names, emails, or phone numbers are collected.
 - **Consent first.** Reviews are published only after an explicit yes. Preferences are saved only with a separate opt-in and can be erased at any time.
 - **Aggregates only.** The assistant-feedback dashboard reads counts from a database function and never reads individual responses.
-- **Honest data.** Synthetic places and illustrative photos are labelled as such. Distances are labelled as straight-line where that is what they are, and travel times appear only when a routing service returns them.
+- **Honest data.** Synthetic places and illustrative photos are labelled as such. Straight-line distances are marked as approximate (تقريباً), and travel times appear only when a routing service returns them.
 - **Server-side secrets.** Gemini and Google server keys never reach the browser. Place photos are proxied.
 
 ## Supported place types

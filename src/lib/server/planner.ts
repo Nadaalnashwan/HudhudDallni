@@ -110,18 +110,17 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
     // a prefetched list is reusable when it was fetched with the same district filter
     const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(input.steps[i], neighborhood, anchor);
 
-    const usable = (list: Place[]) => list.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id);
+    // A plain "نادي" means a mixed gym; women-only gyms are picked only when asked for (or nothing else is left).
+    const unwanted = (p: Place) => input.steps[i].category === "gym" && !input.steps[i].subcategory && p.subcategory === "women";
+    const usable = (list: Place[], strict = true) =>
+      list.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id && !(strict && unwanted(p)));
     let eligible = usable(candidates);
     // The district has nothing new left for this stop: look just outside it instead of repeating a place.
     if (neighborhood && !kept && !eligible.some((p) => !avoid.has(p.id))) {
       const wider = usable(await search(input.steps[i], undefined, anchor)).filter((p) => !avoid.has(p.id));
       if (wider.length) eligible = wider;
     }
-    // A plain "نادي" means a mixed gym; women-only gyms are picked only when asked for.
-    if (input.steps[i].category === "gym" && !input.steps[i].subcategory) {
-      const mixed = eligible.filter((p) => p.subcategory !== "women");
-      if (mixed.length) eligible = mixed;
-    }
+    if (!eligible.length) eligible = usable(candidates, false);
     const fresh = eligible.filter((p) => !avoid.has(p.id));
     if (fresh.length) eligible = fresh;
     const otherNames = eligible.filter((p) => !avoidNames.has(p.name));

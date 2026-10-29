@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { areaCenter, CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import type { IntentContext } from "../intent";
 import { MAX_STOPS } from "../planEdits";
 import type { AssistantAction, Category, ClarifyOption, ConstraintEdit, ParsedRequest, PlaceTag, PreferenceUpdate, StepSpec, Subcategory } from "../types";
@@ -42,6 +42,7 @@ const StepSchema = z.object({
   subcategory: z.string().nullish(),
   placeName: optText,
   tags: strings,
+  district: optText,
 });
 const RequestSchema = z.object({
   steps: z.array(StepSchema).nullish(),
@@ -112,7 +113,9 @@ function checkSub(category: Category, sub?: string | null): Subcategory | undefi
 function checkStep(s: RawStep): StepSpec {
   if (!isCat(s.category)) fail(`unknown category ${s.category}`);
   const category = s.category as Category;
-  return { category, subcategory: checkSub(category, s.subcategory), placeName: nonEmpty(s.placeName), tags: cleanTags(s.tags) };
+  const step: StepSpec = { category, subcategory: checkSub(category, s.subcategory), placeName: nonEmpty(s.placeName), tags: cleanTags(s.tags) };
+  if (s.district && areaCenter(s.district)) step.district = s.district;
+  return step;
 }
 
 function checkRequest(r: RawRequest | null | undefined, required: boolean): ParsedRequest | undefined {

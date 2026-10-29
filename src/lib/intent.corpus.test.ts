@@ -138,3 +138,36 @@ describe("rules understand everyday requests (no Gemini)", () => {
     expect(steps?.map((s) => s.category)).toEqual(cats);
   });
 });
+
+describe("each stop keeps its own district", () => {
+  it("«مقهى بالملقا ومقهى بالنسيم» is two cafes, one in each", () => {
+    const a = parseWithRules("ابي مقهى بالملقا ومقهى بالنسيم", empty).action;
+    expect(a).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe", district: "الملقا" }, { category: "cafe", district: "النسيم" }] } });
+  });
+
+  it("«كوفي بالياسمين وبعده مطعم بالعليا»", () => {
+    const a = parseWithRules("كوفي بالياسمين وبعده مطعم بالعليا", empty).action;
+    expect(a).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe", district: "الياسمين" }, { category: "restaurant", district: "العليا" }] } });
+  });
+});
+
+describe("«I don't like this» replaces the place it points at", () => {
+  const one: IntentContext = { planSteps: [{ category: "cafe", locked: false }] };
+  const three: IntentContext = { planSteps: [{ category: "gym", locked: false }, { category: "cafe", locked: false }, { category: "restaurant", locked: false }] };
+
+  it.each(["ما احب ذا", "ما يعجبني", "مو حلو", "ما ابي ذا", "خايس", "ما ابغى هذا", "ماعجبني هذا", "مو زين", "i don't like it"])("«%s» on a one-place result", (msg) => {
+    expect(parseWithRules(msg, one).action).toMatchObject({ type: "modify", op: "replace", index: 0 });
+  });
+
+  it("uses the place the user tapped", () => {
+    expect(parseWithRules("ما يعجبني ذا", { ...three, focusIndex: 2 }).action).toMatchObject({ type: "modify", op: "replace", index: 2 });
+  });
+
+  it("names a stop: «ما احب الكوفي»", () => {
+    expect(parseWithRules("ما احب الكوفي", three).action).toMatchObject({ type: "modify", op: "replace", index: 1 });
+  });
+
+  it("asks which one when it cannot tell, instead of guessing", () => {
+    expect(parseWithRules("ما يعجبني ذا", three).action.type).toBe("clarify");
+  });
+});

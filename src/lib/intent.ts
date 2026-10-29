@@ -1,4 +1,4 @@
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
+import { CATEGORY_META, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
 import { RIYADH_CENTER } from "./geo";
 import type { AssistantResponse, Category, ConstraintEdit, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
@@ -27,6 +27,7 @@ export type IntentContext = {
   history?: ChatTurn[]; // recent turns, oldest first
   rejectedIds?: string[]; // places the user already turned down this session
   canUndo?: boolean;
+  focusIndex?: number; // the stop the user last tapped: what "ما يعجبني ذا" points at
 };
 
 const normalize = (s: string) =>
@@ -111,7 +112,8 @@ function findCategories(text: string): { category: Category; at: number }[] {
   const out: { category: Category; at: number }[] = [];
   for (const h of hits) {
     const last = out[out.length - 1];
-    if (last && last.category === h.category && !STEP_SEPARATOR.test(text.slice(last.at, h.at))) continue;
+    // "مقهى بالملقا ومقهى بالنسيم": a district between two mentions also makes them two stops
+    if (last && last.category === h.category && !STEP_SEPARATOR.test(text.slice(last.at, h.at)) && !findArea(text.slice(last.at, h.at))) continue;
     // "نادي بادل" is a padel club, not a gym followed by a court
     if (last?.category === "gym" && h.category === "sports" && /^\s*\S+\s*$/.test(text.slice(last.at, h.at)) && !text.slice(h.at).trimStart().startsWith("و")) {
       out[out.length - 1] = h;
@@ -179,6 +181,13 @@ function findTags(text: string): PlaceTag[] {
 const SPREAD =
   /(^|\s)(ال)?(حي|احياء)\s*(مختلف|مختلفه|ثاني|ثانيه|غير|متفرق|متفرقه)|(مختلف|مختلفه|متفرق|متفرقه|مختلفين)\s*(ال)?(حي|احياء)|كل\s*(واحد|وحده|مكان|محطه)\s*(من|في|ب)\s*حي|(مو|مب|ما|لا)\s*(تكون\s*)?(كلها\s*)?(من|في|ب)\s*نفس\s*(ال)?حي|different (neighbou?rhoods?|districts?|areas?)/;
 
+// Neighborhood names that are also everyday words or place names ("أكاديمية طويق"، "وزارات").
+const AREA_CLASHES = new Set(["طويق", "الوزارات", "بدر", "النخيل", "الحمراء"]);
+/** A dataset district, else another Riyadh neighborhood named in full ("بالنسيم"، "حي الملز"). */
+function findArea(text: string): string | undefined {
+  return findDistrict(text) ?? Object.keys(RIYADH_AREAS).find((a) => !AREA_CLASHES.has(a) && new RegExp(PREFIX + normalize(a).replace(/^ال/, "(?:ال)?") + "(?![\\u0621-\\u064A])").test(text));
+}
+
 function findDistrict(text: string): string | undefined {
   return Object.keys(DISTRICTS).find((d) => {
     const n = normalize(d);
@@ -203,6 +212,8 @@ function stepsFrom(text: string): StepSpec[] {
     if (sub) step.subcategory = sub;
     const placeName = findPlaceName(segment, text.slice(hits[i - 1]?.at ?? 0, at), category, sub);
     if (placeName) step.placeName = placeName;
+    const district = findArea(segment);
+    if (district) step.district = district;
     return step;
   });
 }
@@ -216,6 +227,7 @@ function targetIndex(text: string, ctx: IntentContext): number | undefined {
     if (i >= 0) return i;
   }
   for (const [re, f] of ORDINALS) if (re.test(text)) return f(ctx.planSteps.length);
+  if (ctx.focusIndex !== undefined && ctx.focusIndex >= 0 && ctx.focusIndex < ctx.planSteps.length) return ctx.focusIndex;
   if (ctx.planSteps.length === 1) return 0;
   return undefined;
 }
@@ -231,6 +243,9 @@ const DISLIKE = /(غير|بدل|طفشت|مليت|زهقت|ما عجب|ماعج�
 const ALL_PLACES = /(اماكن|ولا مكان|ولا وحده|كلها|كلهم|كل شي|ولا شي|عجبني شي|عاجبني شي)/;
 const ALL_PLACES_EN = /(other|different|new) (places|spots)|change (all|every|them all)/;
 const EVEN_LOCKED = /حتي\s+(\S+\s+)?(ال)?مثبت|حتي\s+(اللي|الي)\s+ثبت|مع المثبت/;
+/** "ما أحب ذا"، "ما يعجبني"، "مو حلو"، "خايس": the place pointed at should go. */
+const DISLIKE_ONE =
+  /(ما|مو|مب|ماني)\s*(احب|حبيت|يعجبني|عجبني|عاجبني|عاجبتني|ابي|ابغي|ابغا|ودي|حاب|حابب|راق|ارتحت|زين|حلو|مناسب|ينفع|يناسبني)|مااحب|مايعجبني|ماعجبني|مابي|مابغي|ماودي|خايس|سيء|سيي|اكره|كرهت|don'?t like|hate (it|this)|not (this|that) one|no good/;
 const NOT_THIS = /(مو|مب|ماهي|مهي)\s*(هذي|هذا|كذا|اللي ببالي|اللي ابيه)|مو هذي الفكره/;
 
 const DIRECTIONS: [RegExp, (lat: number, lng: number) => boolean][] = [
@@ -338,7 +353,7 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
       return { engine, reply: "تمام، فكيت التثبيت.", action: { type: "modify", op: "unlock", index: idx! } };
     if (/ثبت/.test(text) && valid)
       return { engine, reply: "ثبّته لك، ما راح يتغير.", action: { type: "modify", op: "lock", index: idx! } };
-    if (/(شيل|احذف|ما ابي)/.test(text) && valid)
+    if (/(شيل|احذف|الغي|امسح)/.test(text) && valid)
       return { engine, reply: "شلته من الخطة وأعدت ترتيب الباقي.", action: { type: "modify", op: "remove", index: idx! } };
     if (valid) {
       const target = ctx.planSteps[idx!].category;
@@ -361,7 +376,7 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
         };
       if (/(اقرب|قريب اكثر)/.test(text))
         return { engine, reply: "أبشر، بجيب لك خيار أقرب.", action: { type: "modify", op: "replace", index: idx!, nearer: true, onlyThis } };
-      if (/(غير|بدل|ما عجبني|ماعجبني|غيره|ثاني غيره)/.test(text))
+      if (/(غير|بدل|غيره|ثاني غيره)/.test(text) || DISLIKE_ONE.test(text))
         return {
           engine,
           reply: onlyThis ? "أبشر، بغيّره هو بس وأخلي الباقي مثل ما هو." : "أبشر، بغيّره وأحدّث اللي بعده عشان يكون قريب منه.",
@@ -380,7 +395,7 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
           .map(([d]) => ({ label: d, value: `خليها في حي ${d}` }));
         if (options.length) return { engine, reply: "أي حي يناسبك؟", action: { type: "clarify", question: "أي حي يناسبك؟", options, pending: {} } };
       }
-      if (NOT_THIS.test(text) || /(غير|بدل)/.test(text))
+      if (NOT_THIS.test(text) || /(غير|بدل)/.test(text) || DISLIKE_ONE.test(text))
         return {
           engine,
           reply: "وش اللي ودك يتغير؟",
@@ -445,7 +460,10 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
 
   const avoidTags = negatedTags(text);
   if (avoidTags.length) steps = steps.map((s) => (s.subcategory && (avoidTags as string[]).includes(s.subcategory) ? { ...s, subcategory: undefined } : s));
-  const request: ParsedRequest = { steps, district, priority, tags, ...(avoidTags.length ? { avoidTags } : {}), ...(SPREAD.test(text) ? { spread: true } : {}) };
+  const firstArea = steps.map((s) => s.district).find((d) => d && DISTRICTS[d]);
+  // Only the first stop names a district: that's the plan's district, which already covers it.
+  if (steps[0]?.district && DISTRICTS[steps[0].district] && steps.filter((s) => s.district).length === 1) steps = steps.map((s, i) => (i === 0 ? { ...s, district: undefined } : s)).map(({ district, ...s }) => (district ? { ...s, district } : s));
+  const request: ParsedRequest = { steps, district: firstArea ?? district, priority, tags, ...(avoidTags.length ? { avoidTags } : {}), ...(SPREAD.test(text) ? { spread: true } : {}) };
   // A plain "أبي مطعم" shows options right away; the cards carry distance and rating to choose by.
   const chain = steps.map(label).join(" ← ");
   return {

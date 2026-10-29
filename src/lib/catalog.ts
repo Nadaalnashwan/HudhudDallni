@@ -93,6 +93,73 @@ export const TAG_LABELS: Record<PlaceTag, string> = {
   late: "يفتح لوقت متأخر",
 };
 
+/**
+ * Other Riyadh neighborhoods people name ("مقهى بالنسيم"). The dataset has no places inside them, so a
+ * stop there gets the places closest to the neighborhood's center (OpenStreetMap neighborhood features).
+ */
+export const RIYADH_AREAS: Record<string, LatLng> = {
+  النسيم: { lat: 24.7189, lng: 46.8256 },
+  الروضة: { lat: 24.7341, lng: 46.7672 },
+  الملز: { lat: 24.6561, lng: 46.7275 },
+  النخيل: { lat: 24.7422, lng: 46.6375 },
+  الورود: { lat: 24.7244, lng: 46.6785 },
+  المروج: { lat: 24.7578, lng: 46.6637 },
+  المرسلات: { lat: 24.749, lng: 46.6898 },
+  الغدير: { lat: 24.7742, lng: 46.6556 },
+  النفل: { lat: 24.7819, lng: 46.6731 },
+  التعاون: { lat: 24.7743, lng: 46.6989 },
+  الازدهار: { lat: 24.7794, lng: 46.7181 },
+  الفلاح: { lat: 24.7963, lng: 46.7088 },
+  المصيف: { lat: 24.7655, lng: 46.6802 },
+  الوادي: { lat: 24.7894, lng: 46.6914 },
+  الرحمانية: { lat: 24.717, lng: 46.659 },
+  المحمدية: { lat: 24.7326, lng: 46.6503 },
+  الرائد: { lat: 24.7075, lng: 46.6396 },
+  الخزامى: { lat: 24.7179, lng: 46.5906 },
+  السفارات: { lat: 24.6816, lng: 46.6236 },
+  عرقة: { lat: 24.6841, lng: 46.5826 },
+  السويدي: { lat: 24.5912, lng: 46.673 },
+  العريجاء: { lat: 24.6257, lng: 46.6566 },
+  الشفا: { lat: 24.5631, lng: 46.6967 },
+  العزيزية: { lat: 24.5877, lng: 46.7701 },
+  الديرة: { lat: 24.6323, lng: 46.7108 },
+  المربع: { lat: 24.6599, lng: 46.7098 },
+  الفيحاء: { lat: 24.6833, lng: 46.8044 },
+  الجزيرة: { lat: 24.6655, lng: 46.7949 },
+  السلي: { lat: 24.6599, lng: 46.8349 },
+  الريان: { lat: 24.7124, lng: 46.7788 },
+  اليرموك: { lat: 24.8085, lng: 46.7835 },
+  غرناطة: { lat: 24.7912, lng: 46.7437 },
+  القدس: { lat: 24.755, lng: 46.754 },
+  الخليج: { lat: 24.7768, lng: 46.8035 },
+  النهضة: { lat: 24.7608, lng: 46.8061 },
+  الروابي: { lat: 24.697, lng: 46.7901 },
+  الربوة: { lat: 24.6934, lng: 46.7589 },
+  المعذر: { lat: 24.6922, lng: 46.6661 },
+  الندى: { lat: 24.8059, lng: 46.6826 },
+  الواحة: { lat: 24.7411, lng: 46.7167 },
+  المونسية: { lat: 24.8312, lng: 46.7683 },
+  الرمال: { lat: 24.9676, lng: 46.764 },
+  القيروان: { lat: 24.8794, lng: 46.5626 },
+  العقيق: { lat: 24.774, lng: 46.6309 },
+  نمار: { lat: 24.5689, lng: 46.676 },
+  الحزم: { lat: 24.5473, lng: 46.6536 },
+  الشميسي: { lat: 24.6238, lng: 46.7 },
+  المغرزات: { lat: 24.764, lng: 46.7258 },
+  اشبيلية: { lat: 24.7947, lng: 46.7947 },
+  الصفا: { lat: 24.6725, lng: 46.7728 },
+  النظيم: { lat: 24.8001, lng: 46.896 },
+  الجنادرية: { lat: 24.8192, lng: 46.8528 },
+  "ظهرة لبن": { lat: 24.6329, lng: 46.5531 },
+  "الدار البيضاء": { lat: 24.5647, lng: 46.7883 },
+  "صلاح الدين": { lat: 24.7322, lng: 46.6986 },
+  "الملك فهد": { lat: 24.7414, lng: 46.6725 },
+  "الملك فيصل": { lat: 24.7622, lng: 46.775 },
+};
+
+/** Center of a dataset district or another known Riyadh neighborhood. */
+export const areaCenter = (name?: string): LatLng | undefined => (name ? DISTRICTS[name] ?? RIYADH_AREAS[name] : undefined);
+
 /** Riyadh neighborhoods in the hudhud_demo dataset; centers are the mean of its seeded coordinates. */
 export const DISTRICTS: Record<string, LatLng> = {
   العليا: { lat: 24.688, lng: 46.6848 },

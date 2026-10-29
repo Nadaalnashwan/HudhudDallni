@@ -1,5 +1,5 @@
 import "server-only";
-import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { CATEGORY_META, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { parseWithRules, WHAT_QUESTION, type IntentContext } from "../intent";
 import { MAX_STOPS } from "../planEdits";
 import type { AssistantAction, AssistantResponse, Category, PlaceTag, Preferences, Subcategory } from "../types";
@@ -33,7 +33,7 @@ INTENT واحد من: ${INTENTS.join("، ")}
 - search_places: يدور نوع مكان واحد ("أبي كوفي هادي"). "request" بخطوة وحدة.
 - replace_all_places: الأماكن نفسها ما عجبته بس نوع الطلعة نفسه (نفس الأنشطة ونفس العدد، كل وجهة غير مثبّتة تاخذ مكان جديد). أمثلة: "غيرلي الأماكن"، "مو عاجبني ولا مكان"، "طفشت من هالأماكن"، "بدلها كلها"، "ما عجبني شيء"، "show me other places". "includeLocked": true فقط إذا قال صراحة يبي حتى المثبّت يتغير ("غير كل شيء حتى النادي المثبت").
 - replace_entire_plan: الخطة نفسها (التسلسل أو الفكرة) ما عجبته: "غيرلي الخطة"، "ما عجبتني الخطة"، "لا مو كذا، سو لي خطة ثانية"، "خلنا نبدأ من جديد"، "ابي شي ثاني"، "ودي بشي مختلف"، "عطني اقتراح غير"، "different plan". حط "request" جديد مبني على originalRequest وآخر كلامه، ولازم يختلف عن currentPlan: غيّر نشاط واحد على الأقل أو نوعه الفرعي أو الترتيب (مثلاً كوفي مختص بدل الكوفي العادي، مطعم سعودي بدل البرجر، حديقة بدل المول) بشرط يخدم نفس فكرته. حافظ على القيود الصريحة اللي للحين لها معنى (الميزانية، الحي، هادي، عوائل...). المثبّت يبقى إلا إذا قال يتغير كل شيء ← "includeLocked": true.
-- replace_single_stop: وجهة وحدة: "غير الكوفي"، "بدل المطعم"، "خل النادي أقرب"، "أبي مطعم إيطالي بدل البرجر"، "بدل الحديقة بمول". الحقول: "index"، و"step" إذا تغيّر النوع أو الفئة ({"category":C,"subcategory":S أو null,"tags":[T]})، "nearer": true إذا يبيه أقرب، "onlyThis": true فقط إذا قال "بس/فقط/لحاله" (يبقى اللي بعده مثل ما هو)، وإلا false.
+- replace_single_stop: وجهة وحدة: "غير الكوفي"، "بدل المطعم"، "ما أحب ذا"، "ما يعجبني هذا"، "مو حلو"، "ما أبي ذا" (يقصد المكان اللي اختاره focusedStopIndex، أو الوحيد إذا الخطة وجهة وحدة؛ وإذا ما تقدر تحدد وفيه أكثر من وجهة ← clarify_request)، "خل النادي أقرب"، "أبي مطعم إيطالي بدل البرجر"، "بدل الحديقة بمول". الحقول: "index"، و"step" إذا تغيّر النوع أو الفئة ({"category":C,"subcategory":S أو null,"tags":[T]})، "nearer": true إذا يبيه أقرب، "onlyThis": true فقط إذا قال "بس/فقط/لحاله" (يبقى اللي بعده مثل ما هو)، وإلا false.
 - edit_plan_constraints: تصحيح على الخطة كلها بدون تسمية وجهة: "لا أبيه أقرب"، "غالي عطني أرخص"، "أبي مكان أهدأ"، "أبي أماكن تناسب البنات"، "خليها شمال الرياض". الحقل "constraints": {"district": حي من القائمة أو null، "priority": "distance|rating|balanced" أو null، "addTags":[T]، "removeTags":[T]، "women": true إذا يبي أندية نسائية، "nearer": true إذا يبي الكل أقرب، "avoidTags":[T] لنوع أماكن ما يبيه، "spread": true إذا يبي كل مكان من حي مختلف}. النفي مهم: "ما أحب الأماكن الهادية" ← avoidTags:["quiet"] (مو addTags). "أبي كل مكان من حي مختلف"/"مو كلها من نفس الحي" ← spread:true. وفي create_plan نفس الحقلين داخل request: "avoidTags" و "spread". "شمال/جنوب/شرق/غرب الرياض" ← اختر حي مناسب من القائمة. "تناسب البنات" ← women للنادي و family للباقي.
 - add_stop: "أضف/زيد X" ← "step": STEP، و"after": index الوجهة اللي قبلها أو null للنهاية.
 - remove_stop / lock_stop / unlock_stop: "شيل/احذف X"، "ثبت X"، "فك تثبيت X" ← "index".
@@ -42,7 +42,8 @@ INTENT واحد من: ${INTENTS.join("، ")}
 - chat: سلام أو شكر أو سؤال عام.
 
 REQUEST = {"steps":[STEP,...],"district":"حي من القائمة أو null","priority":"distance|rating|balanced","tags":[T]}
-STEP = {"category":C,"subcategory":S أو null,"placeName":"فقط إذا سمّى مكان معين" أو null,"tags":[T]}
+STEP = {"category":C,"subcategory":S أو null,"placeName":"فقط إذا سمّى مكان معين" أو null,"tags":[T],"district":"حي هذي الوجهة إذا حدده لها" أو null}
+كل وجهة لها حيها إذا ذكره: "مقهى بالملقا ومقهى بالنسيم" ← وجهتين cafe، الأولى district "الملقا" والثانية "النسيم". لا تحط كل الوجهات بنفس الحي إلا إذا قال كذا.
 أماكن بالاسم وخدمات يومية: "ودني أكاديمية طويق" ← education/academy مع placeName "طويق". "أبي وزارة التعليم" ← government/ministry مع placeName "التعليم". "جامعة الملك سعود" ← education/university مع placeName "الملك سعود". "النخيل مول" ← mall مع placeName "النخيل". "مغسلة سيارات" ← laundry/car_wash، "مصبغة" ← laundry/clothes_laundry، "جامع/مسجد" ← mosque، "ملعب كورة" ← sports/football، "بادل" ← sports/padel، "محطة مترو" ← transport/metro_station.
 
 C (الفئة): ${CATS.map((c) => `${c}=${CATEGORY_META[c].label}`).join("، ")}
@@ -50,6 +51,7 @@ S (النوع الفرعي — لازم يتبع نفس الفئة):
 ${SUB_DOC}
 T: ${TAGS.map((t) => `${t}=${TAG_LABELS[t]}`).join("، ")}
 الأحياء: ${Object.keys(DISTRICTS).join("، ")}
+أحياء ثانية (فقط في district داخل STEP؛ ما فيها أماكن بالبيانات فنعطي الأقرب لها): ${Object.keys(RIYADH_AREAS).join("، ")}
 
 LEARNED = تفضيلات ثابتة صرّح فيها المستخدم عن نفسه فقط (مثل "دايم أحب الأماكن الهادية"، "ما أحب الزحمة"، "ميزانيتي محدودة"، "أحب الأكل الهندي")، وإلا null:
 {"likes":[T],"avoid":["نص قصير"],"cuisines":[S للمطاعم],"cafeTypes":[S للكوفي],"neighborhoods":["حي"],"budget":"low" أو null,"distance":"distance|rating" أو null}
@@ -82,6 +84,8 @@ export function sanitizeContext(c: Partial<IntentContext> | undefined): IntentCo
     rejectedIds: Array.isArray(c?.rejectedIds) ? c.rejectedIds.filter((x) => typeof x === "string").slice(-50) : [],
     canUndo: c?.canUndo === true,
   };
+  const f = c?.focusIndex;
+  if (typeof f === "number" && Number.isInteger(f) && f >= 0 && f < ctx.planSteps.length) ctx.focusIndex = f;
   return ctx;
 }
 
@@ -109,6 +113,7 @@ export function userPayload(message: string, ctx: IntentContext, preferences?: P
     rejectedPlaceIds: ctx.rejectedIds ?? [],
     pending: ctx.pending ?? null,
     canUndo: Boolean(ctx.canUndo),
+    focusedStopIndex: ctx.focusIndex ?? null,
     savedPreferences: preferences?.consent ? preferences : null,
   });
 }
@@ -119,6 +124,11 @@ export function userPayload(message: string, ctx: IntentContext, preferences?: P
  * Gemini disagrees on exactly these, the rules win.
  */
 export function reconcile(gemini: AssistantAction, rules: AssistantAction): AssistantAction {
+  // "مقهى بالملقا ومقهى بالنسيم": the rules read each stop's district straight from the words
+  if (rules.type === "plan" && new Set(rules.request.steps.map((s) => s.district).filter(Boolean)).size > 1) {
+    const g = gemini.type === "plan" ? gemini.request.steps : [];
+    if (g.length !== rules.request.steps.length || g.some((s, i) => s.district !== rules.request.steps[i].district)) return rules;
+  }
   // "ما أحب الأماكن الهادية": a model that read the word as a wish is overruled by the negation
   if (rules.type === "constraints" && (rules.edit.avoidTags?.length || rules.edit.spread)) {
     const avoid = rules.edit.avoidTags ?? [];

@@ -86,6 +86,7 @@ export type StepSpec = {
   subcategory?: Subcategory;
   placeName?: string; // user named a specific place
   tags?: PlaceTag[];
+  district?: string; // this stop's own neighborhood ("مقهى بالملقا ومقهى بالنسيم")
 };
 
 export type PlanStop = {

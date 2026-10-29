@@ -1,6 +1,6 @@
 import "server-only";
 import { nameMatches, nameMatchScore } from "../arabic";
-import { anchorLabel, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { anchorLabel, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { formatKm, haversineKm } from "../geo";
 import type { LatLng, Place, PlaceTag, PlanStop, Preferences, Priority, StepSpec } from "../types";
 import { placesMode, searchPlaces } from "./places";
@@ -109,18 +109,23 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
   // (Google Places searches near the previous stop, so it stays sequential.)
   const search = (step: StepSpec, neighborhood?: string, near?: LatLng) =>
     searchPlaces({ category: step.category, subcategory: step.subcategory, neighborhood, query: step.placeName, near: near ?? input.origin });
-  const prefetched = placesMode() === "google" ? [] : await Promise.all(input.steps.map((step, i) => search(step, i === 0 ? district : undefined)));
+  // A step that names its own district is searched there; otherwise only the first stop uses the plan's district.
+  const own = (i: number) => (input.steps[i].district && DISTRICTS[input.steps[i].district!] ? input.steps[i].district : undefined);
+  const prefetched = placesMode() === "google" ? [] : await Promise.all(input.steps.map((step, i) => search(step, own(i) ?? (i === 0 ? district : undefined))));
   for (let i = 0; i < input.steps.length; i++) {
     const fallback = input.fallback?.[i];
     const prev = stops[stops.length - 1]?.place;
-    const anchor = prev ? prev.location : input.origin;
-    const anchorLabel = prev ? anchorName(prev) : input.originLabel;
+    // A named neighborhood outside the dataset: the places closest to it, said plainly.
+    const outside = input.steps[i].district && !own(i) ? input.steps[i].district : undefined;
+    const outsideAt = outside ? RIYADH_AREAS[outside] : undefined;
+    const anchor = outsideAt ?? (prev ? prev.location : input.origin);
+    const anchorLabel = outsideAt ? `حي ${outside}` : prev ? anchorName(prev) : input.originLabel;
     const excluded = input.excluded?.[i] ?? [];
     const kept = input.keep?.[i];
-    const neighborhood = !prev ? district : undefined;
+    const neighborhood = own(i) ?? (!prev ? district : undefined);
 
     // a prefetched list is reusable when it was fetched with the same district filter
-    const candidates = prefetched[i] && (i === 0 ? district : undefined) === neighborhood ? prefetched[i] : await search(input.steps[i], neighborhood, anchor);
+    const candidates = prefetched[i] && (own(i) ?? (i === 0 ? district : undefined)) === neighborhood ? prefetched[i] : await search(input.steps[i], neighborhood, anchor);
 
     // A plain "نادي" means a mixed gym; women-only gyms are picked only when asked for (or nothing else is left).
     const asked = input.steps[i];
@@ -131,7 +136,7 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
       list.filter((p) => !excluded.includes(p.id) && !used.has(p.id) && p.id !== kept?.id && !(strict && unwanted(p)));
     let eligible = usable(candidates);
     // The district has nothing new left for this stop: look just outside it instead of repeating a place.
-    if (neighborhood && !kept && !eligible.some((p) => !avoid.has(p.id))) {
+    if (neighborhood && !own(i) && !kept && !eligible.some((p) => !avoid.has(p.id))) {
       const wider = usable(await search(input.steps[i], undefined, anchor)).filter((p) => !avoid.has(p.id));
       if (wider.length) eligible = wider;
     }
@@ -178,7 +183,7 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
       alternatives: (input.spread ? acrossDistricts(pool, districts) : pool).slice(0, 4),
       excluded,
       locked: input.locked?.[i] ?? false,
-      reason: reasonFor(place, step, anchorLabel, distKm, wanted, input),
+      reason: (outsideAt ? `ما عندي أماكن داخل حي ${outside}، فهذا الأقرب له • ` : "") + reasonFor(place, step, anchorLabel, distKm, wanted, input),
       distanceFromPrevKm: distKm,
       anchorLabel,
     });

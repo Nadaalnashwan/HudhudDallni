@@ -376,6 +376,7 @@ export default function HudhudApp() {
       .map((m) => ({ role: m.role, text: m.text.slice(0, 280) })),
     rejectedIds: [...rejected.current].slice(-50),
     canUndo: undoStack.length > 0,
+    focusIndex: focus && plan?.stops[focus.stopIndex]?.place.id === focus.place.id ? focus.stopIndex : undefined,
   });
 
   /** Stable tastes Gemini heard in chat are saved only if the user allowed learning. */

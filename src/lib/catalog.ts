@@ -24,7 +24,7 @@ export const CATEGORY_META: Record<Category, { label: string; plural: string; co
 export const SUBCATEGORY_META: Record<Subcategory, { category: Category; label: string; words: string[] }> = {
   italian: { category: "restaurant", label: "إيطالي", words: ["ايطالي", "باستا", "مكرونه", "italian"] },
   fast_food: { category: "restaurant", label: "وجبات سريعة", words: ["وجبات سريعه", "فاست فود", "fast food", "سريعه"] },
-  burger: { category: "restaurant", label: "برجر", words: ["برجر", "برقر", "بيرجر", "burger"] },
+  burger: { category: "restaurant", label: "برجر", words: ["برجر", "برقر", "بيرجر", "برغر", "burger"] },
   pizza: { category: "restaurant", label: "بيتزا", words: ["بيتزا", "pizza"] },
   saudi: { category: "restaurant", label: "سعودي", words: ["سعودي", "شعبي", "كبسه", "مندي", "نجدي"] },
   shawarma: { category: "restaurant", label: "شاورما", words: ["شاورما", "شاورمه", "shawarma"] },
@@ -38,14 +38,14 @@ export const SUBCATEGORY_META: Record<Subcategory, { category: Category; label: 
   drive_thru: { category: "cafe", label: "درايف ثرو", words: ["درايف", "drive", "من السياره", "سياره"] },
   fitness: { category: "gym", label: "لياقة", words: ["لياقه", "فتنس", "fitness"] },
   women: { category: "gym", label: "نسائي", words: ["نسائي", "للبنات", "بنات", "نساء", "women"] },
-  bakery: { category: "dessert", label: "مخبز", words: ["مخبز", "مخبوزات", "معجنات", "كرواسون", "bakery"] },
+  bakery: { category: "dessert", label: "مخبز", words: ["مخبز", "مخابز", "مخبوزات", "معجنات", "كرواسون", "bakery"] },
   ice_cream: { category: "dessert", label: "آيس كريم", words: ["ايس كريم", "ايسكريم", "بوظه", "جيلاتو", "ice cream"] },
   public_park: { category: "park", label: "حديقة عامة", words: [] },
   shopping: { category: "mall", label: "تسوق", words: [] },
   games: { category: "entertainment", label: "ألعاب", words: ["العاب", "قيمز", "games"] },
   // Words are matched after normalization (no hamza, ة→ه, ى→ي). These categories are implied by their
   // words alone, so keep each word specific: no bare "سيارات" or "ملابس".
-  car_wash: { category: "laundry", label: "مغسلة سيارات", words: ["مغسله سيارات", "مغسله سياره", "مغاسل سيارات", "غسيل سيارات", "غسيل سياره", "تغسيل سياره", "car wash", "carwash"] },
+  car_wash: { category: "laundry", label: "مغسلة سيارات", words: ["مغسله سيارات", "مغسله سياره", "مغاسل سيارات", "غسيل سيارات", "غسيل سياره", "تغسيل سياره", "اغسل سياره", "اغسل سيارتي", "اغسل السياره", "car wash", "carwash"] },
   clothes_laundry: { category: "laundry", label: "مغسلة ملابس", words: ["مغسله ملابس", "مصبغه", "مصابغ", "غسيل ملابس", "كوي ملابس", "دراي كلين", "laundry"] },
   mosque: { category: "mosque", label: "مسجد", words: ["مسجد", "مساجد", "جامع", "مصلي", "mosque"] },
   football: { category: "sports", label: "ملعب كرة قدم", words: ["كره قدم", "كره القدم", "ملعب كوره", "كوره", "فوتبول", "football", "soccer"] },

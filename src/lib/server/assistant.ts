@@ -1,10 +1,11 @@
 import "server-only";
 import { CATEGORY_META, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
-import { parseWithRules, type IntentContext } from "../intent";
+import { parseWithRules, WHAT_QUESTION, type IntentContext } from "../intent";
 import { MAX_STOPS } from "../planEdits";
 import type { AssistantAction, AssistantResponse, Category, PlaceTag, Preferences, Subcategory } from "../types";
 import { geminiEnabled, geminiJson, GeminiQuotaError } from "./gemini";
 import { INTENTS, validateOutput } from "./intentSchema";
+import { findPlacesByName } from "./places";
 
 export type AssistantRequest = { message: string; context: IntentContext; preferences?: Preferences };
 
@@ -37,7 +38,7 @@ INTENT واحد من: ${INTENTS.join("، ")}
 - add_stop: "أضف/زيد X" ← "step": STEP، و"after": index الوجهة اللي قبلها أو null للنهاية.
 - remove_stop / lock_stop / unlock_stop: "شيل/احذف X"، "ثبت X"، "فك تثبيت X" ← "index".
 - undo_plan_change: يبي يرجع للخطة اللي قبل ("رجع الخطة اللي قبل"، "تراجع") — فقط إذا canUndo true.
-- clarify_request: سؤال توضيحي واحد قصير فقط إذا القصد غامض فعلاً ("مو هذي الفكرة" بدون شي تقدر تستنتجه من المحادثة، أو "أبي أطلع" بدون نشاط، أو "أبي مطعم" بدون أي تفضيل). الحقول: "question"، "options":[{"label":"..","value":"نص يرسله المستخدم"}]، "pending": REQUEST الجزئي اللي فهمته.
+- clarify_request: سؤال توضيحي واحد قصير فقط إذا القصد غامض فعلاً ("مو هذي الفكرة" بدون شي تقدر تستنتجه من المحادثة، أو "أبي أطلع" بدون نشاط). طلب فيه نوع مكان ("أبي مطعم"، "مطاعم"، "كوفي") ← create_plan مباشرة بدون سؤال. افهم الجمع والعامية والأخطاء الإملائية: "مطاعم/مطعن" = مطعم، "مقاهي/كوفيهات" = كوفي، "نوادي/اندية/جيمات" = نادي، "حدايق" = حديقة. الحقول: "question"، "options":[{"label":"..","value":"نص يرسله المستخدم"}]، "pending": REQUEST الجزئي اللي فهمته.
 - chat: سلام أو شكر أو سؤال عام.
 
 REQUEST = {"steps":[STEP,...],"district":"حي من القائمة أو null","priority":"distance|rating|balanced","tags":[T]}
@@ -152,8 +153,21 @@ export function reconcile(gemini: AssistantAction, rules: AssistantAction): Assi
 export async function answer(req: AssistantRequest): Promise<AssistantResponse> {
   const ctx = sanitizeContext(req.context);
   const rules = parseWithRules(req.message, ctx);
-  if (!geminiEnabled()) return rules;
+  const res = geminiEnabled() ? await decide(req, ctx, rules) : rules;
+  // Nothing named a kind of place: the message may be a place's own name ("ودني بانوراما").
+  if (rules.action.type === "clarify" && rules.action.question === WHAT_QUESTION && (res.action.type === "clarify" || res.action.type === "chat")) {
+    const place = (await findPlacesByName(req.message).catch(() => []))[0];
+    if (place)
+      return {
+        ...res,
+        reply: `أبشر، هذا ${place.name}.`,
+        action: { type: "plan", request: { steps: [{ category: place.category, subcategory: place.subcategory, placeName: place.name }], priority: "balanced", tags: [] } },
+      };
+  }
+  return res;
+}
 
+async function decide(req: AssistantRequest, ctx: IntentContext, rules: AssistantResponse): Promise<AssistantResponse> {
   try {
     // When the rules already have a clear answer, don't keep the user waiting on a slow model.
     const clear = rules.action.type !== "clarify" && rules.action.type !== "chat";

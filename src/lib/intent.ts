@@ -35,32 +35,38 @@ const normalize = (s: string) =>
     .replace(/[ً-ٟـ]/g, "")
     .replace(/[أإآ]/g, "ا")
     .replace(/ى/g, "ي")
+    .replace(/ئ/g, "ي")
+    .replace(/ؤ/g, "و")
     .replace(/ة/g, "ه");
 
 const PREFIX = "(?:^|[\\s،,.؟?!:\\-←>])(?:و|ب|ل|ف)?(?:ال)?";
 
+// Singulars, broken plurals ("مطاعم"، "مقاهي"، "نوادي"), verbs ("اتعشى"، "اتسوق") and English, normalized.
 const CATEGORY_WORDS: Record<Category, string[]> = {
-  gym: ["نادي", "جيم", "gym", "اتمرن", "تمرين"],
-  cafe: ["كوفي", "قهوه", "كافيه", "كافي", "مقهي", "اتقهوي", "coffee", "cafe"],
-  restaurant: ["مطعم", "اتغدي", "غدا", "اتعشي", "عشا", "اكل", "جوعان", "restaurant"],
-  dessert: ["حلا", "حلي", "حلويات", "كيك", "ايس كريم", "ايسكريم"],
-  park: ["حديقه", "منتزه", "ممشي", "امشي", "اتمشي", "تمشيه"],
-  mall: ["مول", "تسوق", "مجمع تجاري"],
-  entertainment: ["ترفيه", "العاب", "قيمز", "ملاهي"],
+  gym: ["نادي", "نوادي", "انديه", "جيم", "gym", "اتمرن", "تمرين", "تمارين", "اتدرب", "workout", "fitness"],
+  cafe: ["كوفي", "قهوه", "قهاوي", "كافيه", "كافي", "مقهي", "مقاهي", "اتقهوي", "coffee", "cafe", "café"],
+  restaurant: [
+    "مطعم", "مطاعم", "اتغدي", "غدا", "اتعشي", "عشا", "اكل", "جوعان", "جعان", "وجبه", "وجبات", "طعام",
+    "افطر", "فطور", "فطار", "افطار", "ريوق", "اتريق", "restaurant", "food", "dinner", "lunch", "breakfast", "eat",
+  ],
+  dessert: ["حلا", "حلي", "حلويات", "شي حلو", "كيك", "ايس كريم", "ايسكريم", "دونات", "كنافه", "بقلاوه", "وافل", "كريب", "dessert", "sweets"],
+  park: ["حديقه", "حدايق", "منتزه", "ممشي", "امشي", "اتمشي", "تمشيه", "park", "walk"],
+  mall: ["مول", "تسوق", "اتسوق", "مجمع تجاري", "مجمعات تجاريه", "سوق", "اسواق", "mall", "shopping"],
+  entertainment: ["ترفيه", "العاب", "قيمز", "ملاهي", "بولينج", "بولنج", "فعاليات", "entertainment", "fun"],
   laundry: ["مغسله", "مغاسل", "مصبغه", "غسيل", "laundry"],
-  mosque: ["مسجد", "مساجد", "جامع", "مصلي", "mosque"],
-  sports: ["ملعب", "ملاعب"],
-  education: ["مدرسه", "مدارس", "school"],
-  transport: ["مترو", "metro"],
+  mosque: ["مسجد", "مساجد", "جامع", "جوامع", "مصلي", "اصلي", "صلاه", "mosque"],
+  sports: ["ملعب", "ملاعب", "stadium"],
+  education: ["مدرسه", "مدارس", "كليه", "كليات", "معهد", "معاهد", "school", "college"],
+  transport: ["مترو", "محطه", "محطات", "قطار", "metro", "train", "station", "subway"],
   government: ["وزاره", "وزارات", "ministry", "جهه حكوميه"],
 };
 
 // A cuisine/type word alone ("أبي برجر", "أبي بادل") implies its category only where that is unambiguous.
 const IMPLYING: Category[] = ["restaurant", "dessert", "entertainment", "laundry", "mosque", "sports", "education", "transport", "government"];
 // Words that must end where the word ends: "جامع" (mosque) is not the start of "جامعه" (university).
-const WHOLE_WORDS = new Set(["جامع"]);
+const WHOLE_WORDS = new Set(["جامع", "سوق", "اصلي", "eat", "walk", "fun"]);
 const wordRe = (w: string, flags?: string) => new RegExp(PREFIX + normalize(w) + (WHOLE_WORDS.has(w) ? "(?![\\u0621-\\u064A])" : ""), flags);
-const STEP_SEPARATOR = /(بعده|بعدها|بعدين|ثم|وبعد)/;
+const STEP_SEPARATOR = /(بعده|بعدها|بعدين|ثم|وبعد|then|after)/;
 const REFERENCE = /(?:^|\s)(من|عند|جنب|حول|قرب|بعد|قبل)\s*$/;
 
 const TAG_WORDS: Record<PlaceTag, string[]> = {
@@ -258,6 +264,12 @@ function constraintEdit(text: string, ctx: IntentContext): ConstraintEdit | unde
 const describeConstraint = (e: ConstraintEdit) =>
   [...(e.avoidTags ?? []).map((t) => `بتجنب «${TAG_LABELS[t]}»`), ...(e.spread ? ["بخلي كل مكان من حي مختلف"] : [])].join(" و") || "بعدّل الخطة";
 
+/** Asked when nothing in the message names a kind of place; the server may still find a place by name. */
+export const WHAT_QUESTION = "وش تدور عليه؟ اختر أو اكتبه بطريقتك:";
+const WHAT_OPTIONS = ["مطعم", "كوفي", "نادي", "حلويات", "حديقة", "مول", "مسجد", "مغسلة سيارات"].map((l) => ({ label: l, value: `أبي ${l}` }));
+const GREETING = /^(هلا|اهلا|اهلين|مرحبا|السلام|سلام|هاي|صباح|مساء|hi|hello|hey)/;
+const THANKS = /(شكرا|مشكور|يعطيك العافيه|تسلم|thank)/;
+
 const PLAN_IDEAS = [
   { label: "نادي ← كوفي ← مطعم", value: "نادي وبعده كوفي قريب منه وبعده مطعم قريب من الكوفي" },
   { label: "كوفي ← عشا", value: "كوفي وبعده عشا قريب منه" },
@@ -265,8 +277,38 @@ const PLAN_IDEAS = [
   { label: "حديقة ← كوفي", value: "ممشى وبعده كوفي قريب" },
 ];
 
+/** Every word the rules know; a known word is never "corrected" into another one. */
+const VOCAB = [...Object.values(CATEGORY_WORDS).flat(), ...Object.values(SUBCATEGORY_META).flatMap((m) => m.words)].map(normalize);
+const KNOWN = new Set([...VOCAB, ...Object.values(TAG_WORDS).flat().map(normalize), ...Object.keys(DISTRICTS).map(normalize), ...NAME_STOP, "عادي", "هادي", "ثاني", "ثانيه", "ثالث", "رابع", "غيره", "مختلف", "جديد"]);
+const TYPO_TARGETS = VOCAB.filter((w) => !w.includes(" ") && w.length >= 4);
+
+/** One insertion, deletion or substitution apart. */
+function oneEditApart(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1 || a === b) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return a.slice(i + (a.length >= b.length ? 1 : 0)) === b.slice(i + (b.length >= a.length ? 1 : 0));
+}
+
+/**
+ * "مطعن" → "مطعم": an unknown word one typo away from a known one (same first letter, 4+ letters).
+ * A 4-letter word only gets a swapped letter: "ثاني" must not grow into "ثانوي".
+ */
+function fixTypos(text: string): string {
+  return text
+    .split(/\s+/)
+    .map((tok) => {
+      const [, pre, core] = /^((?:[وبلف])?(?:ال)?)(.*)$/.exec(tok)!;
+      if (core.length < 4 || KNOWN.has(core) || KNOWN.has(tok)) return tok;
+      const fix = TYPO_TARGETS.find((w) => w[0] === core[0] && (core.length > 4 || w.length === 4) && oneEditApart(core, w));
+      return fix ? pre + fix : tok;
+    })
+    .join(" ");
+}
+
 export function parseWithRules(raw: string, ctx: IntentContext): AssistantResponse {
-  const text = normalize(raw);
+  const typed = normalize(raw);
+  const text = findCategories(typed).length ? typed : fixTypos(typed);
   const engine = "rules" as const;
 
   if (UNDO.test(text))
@@ -395,50 +437,16 @@ export function parseWithRules(raw: string, ctx: IntentContext): AssistantRespon
         reply: "حياك! وش ودك تسوي بالطلعة؟ اكتبها بالترتيب أو اختر وحدة:",
         action: { type: "clarify", question: "وش ودك تسوي بالطلعة؟", options: PLAN_IDEAS, pending: { tags, district, priority } },
       };
-    return {
-      engine,
-      reply: "ما فهمت عليك تمام قول لي وش تبي؟ مثلاً: «أبي كوفي هادي بالملقا» أو «نادي وبعده كوفي وبعده مطعم».",
-      action: { type: "chat" },
-    };
+    if (THANKS.test(text)) return { engine, reply: "العفو، بالخدمة دايم! تبي شي ثاني؟", action: { type: "chat" } };
+    // Never a dead end: offer the common kinds of place, keeping whatever was understood (district, priority).
+    const question = GREETING.test(text) ? "هلا والله! وش تدور عليه اليوم؟" : WHAT_QUESTION;
+    return { engine, reply: question, action: { type: "clarify", question, options: WHAT_OPTIONS, pending: { tags, district, priority } } };
   }
 
   const avoidTags = negatedTags(text);
   if (avoidTags.length) steps = steps.map((s) => (s.subcategory && (avoidTags as string[]).includes(s.subcategory) ? { ...s, subcategory: undefined } : s));
   const request: ParsedRequest = { steps, district, priority, tags, ...(avoidTags.length ? { avoidTags } : {}), ...(SPREAD.test(text) ? { spread: true } : {}) };
-  if (steps.length === 1) {
-    if (steps[0].category === "cafe" && !tags.length && !steps[0].subcategory)
-      return {
-        engine,
-        reply: "وش نوع الكوفي اللي تبيه؟",
-        action: {
-          type: "clarify",
-          question: "وش نوع الكوفي اللي تبيه؟",
-          options: [
-            { label: "هادي", value: "هادي" },
-            { label: "قهوة مختصة", value: "مختصة" },
-            { label: "للمذاكرة", value: "للمذاكرة" },
-            { label: "درايف ثرو", value: "درايف ثرو" },
-            { label: "ما يفرق", value: "ما يفرق" },
-          ],
-          pending: request,
-        },
-      };
-    if (!priority && !district && !steps[0].subcategory && !steps[0].placeName)
-      return {
-        engine,
-        reply: "تهمك المسافة أكثر أو التقييم؟",
-        action: {
-          type: "clarify",
-          question: "تهمك المسافة أكثر أو التقييم؟",
-          options: [
-            { label: "الأقرب لي", value: "الأقرب" },
-            { label: "الأعلى تقييم", value: "الأعلى تقييم" },
-            { label: "ما يفرق", value: "ما يفرق" },
-          ],
-          pending: request,
-        },
-      };
-  }
+  // A plain "أبي مطعم" shows options right away; the cards carry distance and rating to choose by.
   const chain = steps.map(label).join(" ← ");
   return {
     engine,

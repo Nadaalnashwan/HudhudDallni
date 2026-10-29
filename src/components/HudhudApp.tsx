@@ -69,6 +69,9 @@ type BuildArgs = {
   goal?: string; // kept on the plan, never sent to the planner
 };
 
+/** A request that takes longer than this is dropped with a message, so the chat never stays stuck. */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export default function HudhudApp() {
   const [config, setConfig] = useState<Config | null>(null);
   const [store, setStore] = useState<StoreStatus | null>(null);
@@ -140,6 +143,7 @@ export default function HudhudApp() {
     try {
       res = await fetch("/api/plan", {
         method: "POST",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...build,
@@ -422,6 +426,7 @@ export default function HudhudApp() {
     try {
       const res = await fetch("/api/assistant", {
         method: "POST",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, context: intentContext(), preferences: prefs }),
       });

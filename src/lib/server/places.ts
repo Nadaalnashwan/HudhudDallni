@@ -55,6 +55,14 @@ export async function searchPlaces(opts: SearchOpts): Promise<Place[]> {
   return named.length ? named : pool;
 }
 
+/** "ودني بانوراما": places anywhere in the data whose name matches, best first. */
+export async function findPlacesByName(query: string): Promise<Place[]> {
+  const mode = placesMode();
+  if (mode === "google") return [];
+  const pool = mode === "supabase" ? (await Promise.all((Object.keys(CATEGORY_META) as Category[]).map((category) => queryPlaces({ category })))).flat() : DEMO_PLACES;
+  return matchByName(pool, query);
+}
+
 export async function getPlace(id: string, category: Category): Promise<Place | null> {
   if (id.startsWith("demo-")) return DEMO_PLACES.find((p) => p.id === id) ?? null;
   if (placesMode() === "supabase") return getPlaceById(id);

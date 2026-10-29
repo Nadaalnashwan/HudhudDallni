@@ -25,19 +25,14 @@ describe("parseWithRules: new requests", () => {
     });
   });
 
-  it("asks distance or rating for a single vague request", () => {
+  it("shows options right away for a single request", () => {
     const res = parseWithRules("أبي أتغدى", empty);
-    expect(res.action.type).toBe("clarify");
-    if (res.action.type !== "clarify") return;
-    expect(res.action.pending?.steps).toEqual([{ category: "restaurant" }]);
-    expect(res.action.options?.length).toBeGreaterThan(0);
+    expect(res.action).toMatchObject({ type: "plan", request: { steps: [{ category: "restaurant" }], priority: "balanced" } });
   });
 
-  it("asks which kind of café when none is given", () => {
+  it("does not stop to ask which kind of café", () => {
     const res = parseWithRules("أبي كوفي", empty);
-    expect(res.action.type).toBe("clarify");
-    if (res.action.type !== "clarify") return;
-    expect(res.action.question).toContain("الكوفي");
+    expect(res.action).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe" }] } });
   });
 
   it("completes a pending request with the clarifying answer", () => {
@@ -48,8 +43,18 @@ describe("parseWithRules: new requests", () => {
     });
   });
 
-  it("falls back to chat when nothing is recognised", () => {
-    expect(parseWithRules("السلام عليكم", empty).action.type).toBe("chat");
+  it("greets back and offers kinds of place instead of a dead end", () => {
+    const a = parseWithRules("السلام عليكم", empty).action;
+    expect(a.type).toBe("clarify");
+    expect(a.type === "clarify" && a.options?.length).toBeGreaterThan(3);
+  });
+
+  it("never answers «I didn't understand»", () => {
+    for (const msg of ["ممم", "asdf", "وش رايك", "طيب"]) {
+      const res = parseWithRules(msg, empty);
+      expect(res.reply).not.toMatch(/ما فهمت/);
+      expect(res.action.type === "clarify" || res.action.type === "chat").toBe(true);
+    }
   });
 });
 

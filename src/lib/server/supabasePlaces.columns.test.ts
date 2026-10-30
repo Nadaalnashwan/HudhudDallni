@@ -9,7 +9,8 @@ vi.mock("../supabase", () => ({
         selects.push(cols);
         const q = {
           eq: () => q,
-          limit: async () => {
+          order: () => q,
+          range: async () => {
             await new Promise((r) => setTimeout(r, 5));
             return cols.includes("location_status")
               ? { data: null, error: { code: "42703", message: "column places.location_status does not exist" } }

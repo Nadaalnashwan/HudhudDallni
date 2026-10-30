@@ -92,9 +92,10 @@ export function toPlace(r: PlaceRow): Place {
   };
 }
 
-// Short cache: the seed is static and a whole category is at most a few hundred rows.
+// Short cache: the seed is static and a whole category is about a thousand rows.
 const cache = new Map<string, { at: number; rows: Place[] }>();
 const TTL = 60_000;
+const PAGE = 1000; // PostgREST's default max rows per response
 
 /** Exact DB filters: category, optional subcategory and neighborhood. Distance/ranking happen in app code. */
 export async function queryPlaces(f: { category: Category; subcategory?: Subcategory; neighborhood?: string }): Promise<Place[]> {
@@ -104,14 +105,21 @@ export async function queryPlaces(f: { category: Category; subcategory?: Subcate
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return hit.rows;
 
-  const { data, error } = await select((cols) => {
-    let q = db.from("places").select(cols).eq("category", f.category);
-    if (f.subcategory) q = q.eq("subcategory", f.subcategory);
-    if (f.neighborhood) q = q.eq("neighborhood", f.neighborhood);
-    return q.limit(500);
-  });
-  if (error) throw new PlacesUnavailableError(`${error.code ?? ""} ${error.message}`.trim());
-  const rows = (data as unknown as PlaceRow[]).map(toPlace);
+  // PostgREST caps each response, and a whole category can pass that, so read it page by page.
+  const found: PlaceRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await select((cols) => {
+      let q = db.from("places").select(cols).eq("category", f.category);
+      if (f.subcategory) q = q.eq("subcategory", f.subcategory);
+      if (f.neighborhood) q = q.eq("neighborhood", f.neighborhood);
+      return q.order("id").range(from, from + PAGE - 1);
+    });
+    if (error) throw new PlacesUnavailableError(`${error.code ?? ""} ${error.message}`.trim());
+    const page = data as unknown as PlaceRow[];
+    found.push(...page);
+    if (page.length < PAGE) break;
+  }
+  const rows = found.map(toPlace);
   cache.set(key, { at: Date.now(), rows });
   return rows;
 }

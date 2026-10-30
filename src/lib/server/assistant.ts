@@ -51,7 +51,7 @@ S (النوع الفرعي — لازم يتبع نفس الفئة):
 ${SUB_DOC}
 T: ${TAGS.map((t) => `${t}=${TAG_LABELS[t]}`).join("، ")}
 الأحياء: ${Object.keys(DISTRICTS).join("، ")}
-أحياء ثانية (فقط في district داخل STEP؛ ما فيها أماكن بالبيانات فنعطي الأقرب لها): ${Object.keys(RIYADH_AREAS).join("، ")}
+أحياء ثانية (فقط في district داخل STEP): ${Object.keys(RIYADH_AREAS).join("، ")}
 
 LEARNED = تفضيلات ثابتة صرّح فيها المستخدم عن نفسه فقط (مثل "دايم أحب الأماكن الهادية"، "ما أحب الزحمة"، "ميزانيتي محدودة"، "أحب الأكل الهندي")، وإلا null:
 {"likes":[T],"avoid":["نص قصير"],"cuisines":[S للمطاعم],"cafeTypes":[S للكوفي],"neighborhoods":["حي"],"budget":"low" أو null,"distance":"distance|rating" أو null}

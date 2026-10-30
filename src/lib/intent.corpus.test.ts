@@ -155,6 +155,15 @@ describe("each stop keeps its own district", () => {
     expect(a).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe", district: "الدرعية" }, { category: "restaurant", district: "الخرج" }] } });
   });
 
+  it("Saudi cities: «كوفي بجدة ومطعم بأبها»; «الخبر» only as a place", () => {
+    expect(parseWithRules("ابي كوفي بجدة ومطعم بأبها", empty).action).toMatchObject({
+      request: { steps: [{ category: "cafe", district: "جدة" }, { category: "restaurant", district: "أبها" }] },
+    });
+    expect(parseWithRules("ابي مطعم بالخبر", empty).action).toMatchObject({ request: { steps: [{ category: "restaurant", district: "الخبر" }] } });
+    const a = parseWithRules("وش الخبر ابي مطعم", empty).action;
+    expect(a.type === "plan" && a.request.steps.every((s) => !s.district)).toBe(true);
+  });
+
   it("«مرات» is a governorate only as «محافظة مرات»", () => {
     expect(parseWithRules("ابي مطعم في محافظة مرات", empty).action).toMatchObject({ request: { steps: [{ category: "restaurant", district: "مرات" }] } });
     const a = parseWithRules("ابي مطعم مرات احس ابي برجر", empty).action;

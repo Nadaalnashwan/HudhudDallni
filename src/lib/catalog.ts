@@ -182,11 +182,49 @@ export const GOVERNORATES: Record<string, LatLng> = {
   الدلم: { lat: 23.9969, lng: 47.165 },
 };
 
-/** Center of a dataset district, another known Riyadh neighborhood, or a Riyadh Region governorate. */
-export const areaCenter = (name?: string): LatLng | undefined => (name ? DISTRICTS[name] ?? RIYADH_AREAS[name] ?? GOVERNORATES[name] : undefined);
+/** Major Saudi cities outside Riyadh Region ("مطعم بجدة"), centered on each city's OpenStreetMap place node. */
+export const SAUDI_CITIES: Record<string, LatLng> = {
+  جدة: { lat: 21.5504, lng: 39.1742 },
+  مكة: { lat: 21.4208, lng: 39.8269 },
+  "المدينة المنورة": { lat: 24.4712, lng: 39.6111 },
+  الدمام: { lat: 26.4368, lng: 50.104 },
+  الخبر: { lat: 26.304, lng: 50.196 },
+  الظهران: { lat: 26.2967, lng: 50.1202 },
+  الأحساء: { lat: 25.3697, lng: 49.5865 },
+  الجبيل: { lat: 27.0007, lng: 49.6532 },
+  القطيف: { lat: 26.5586, lng: 50.0087 },
+  الطائف: { lat: 21.2703, lng: 40.4158 },
+  تبوك: { lat: 28.4013, lng: 36.567 },
+  أبها: { lat: 18.2164, lng: 42.5044 },
+  "خميس مشيط": { lat: 18.3, lng: 42.7333 },
+  بريدة: { lat: 26.3317, lng: 43.9717 },
+  عنيزة: { lat: 26.0909, lng: 43.9864 },
+  الرس: { lat: 25.8685, lng: 43.5039 },
+  حائل: { lat: 27.5209, lng: 41.6986 },
+  جازان: { lat: 16.8947, lng: 42.558 },
+  صبيا: { lat: 17.1502, lng: 42.6215 },
+  نجران: { lat: 17.544, lng: 44.2247 },
+  شرورة: { lat: 17.4912, lng: 47.1126 },
+  الباحة: { lat: 20.0138, lng: 41.4656 },
+  بيشة: { lat: 20.0, lng: 42.6 },
+  القنفذة: { lat: 19.1264, lng: 41.0789 },
+  عرعر: { lat: 30.9816, lng: 41.0165 },
+  رفحاء: { lat: 29.6324, lng: 43.5179 },
+  سكاكا: { lat: 29.9784, lng: 40.2048 },
+  القريات: { lat: 31.3333, lng: 37.3419 },
+  "حفر الباطن": { lat: 28.4328, lng: 45.9628 },
+  ينبع: { lat: 24.089, lng: 38.0687 },
+  رابغ: { lat: 22.799, lng: 39.0336 },
+  أملج: { lat: 25.0303, lng: 37.2622 },
+  العلا: { lat: 26.5589, lng: 37.9597 },
+};
 
-/** "حي النسيم" / "محافظة الخرج". */
-export const areaLabel = (name: string) => `${GOVERNORATES[name] ? "محافظة" : "حي"} ${name}`;
+/** Center of a dataset district, another known Riyadh neighborhood, a Riyadh Region governorate or a Saudi city. */
+export const areaCenter = (name?: string): LatLng | undefined =>
+  name ? DISTRICTS[name] ?? RIYADH_AREAS[name] ?? GOVERNORATES[name] ?? SAUDI_CITIES[name] : undefined;
+
+/** "حي النسيم" / "محافظة الخرج" / "جدة". */
+export const areaLabel = (name: string) => (SAUDI_CITIES[name] ? name : `${GOVERNORATES[name] ? "محافظة" : "حي"} ${name}`);
 
 /** Riyadh neighborhoods in the hudhud_demo dataset; centers are the mean of its seeded coordinates. */
 export const DISTRICTS: Record<string, LatLng> = {

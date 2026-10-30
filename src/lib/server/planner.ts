@@ -1,6 +1,6 @@
 import "server-only";
 import { nameMatches, nameMatchScore } from "../arabic";
-import { anchorLabel, areaCenter, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { anchorLabel, areaCenter, areaLabel, DISTRICTS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { formatKm, haversineKm } from "../geo";
 import type { LatLng, Place, PlaceTag, PlanStop, Preferences, Priority, StepSpec } from "../types";
 import { placesMode, searchPlaces } from "./places";
@@ -125,10 +125,10 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
         ? prefetched[i]
         : await search(input.steps[i], neighborhood, prev ? prev.location : input.origin);
     // A named neighborhood with nothing of this kind in the data: the places closest to it, said plainly.
-    const outside = own(i) && !candidates.length && RIYADH_AREAS[own(i)!] ? own(i) : undefined;
-    const outsideAt = outside ? RIYADH_AREAS[outside] : undefined;
+    const outside = own(i) && !candidates.length && !DISTRICTS[own(i)!] ? own(i) : undefined;
+    const outsideAt = outside ? areaCenter(outside) : undefined;
     const anchor = outsideAt ?? (prev ? prev.location : input.origin);
-    const anchorLabel = outsideAt ? `حي ${outside}` : prev ? anchorName(prev) : input.originLabel;
+    const anchorLabel = outside ? areaLabel(outside) : prev ? anchorName(prev) : input.originLabel;
     if (outsideAt) candidates = await search(input.steps[i], undefined, outsideAt);
 
     // A plain "نادي" means a mixed gym; women-only gyms are picked only when asked for (or nothing else is left).
@@ -187,7 +187,7 @@ export async function buildStops(input: BuildInput): Promise<PlanStop[]> {
       alternatives: (input.spread ? acrossDistricts(pool, districts) : pool).slice(0, 4),
       excluded,
       locked: input.locked?.[i] ?? false,
-      reason: (outsideAt ? `ما عندي أماكن داخل حي ${outside}، فهذا الأقرب له • ` : "") + reasonFor(place, step, anchorLabel, distKm, wanted, input),
+      reason: (outside ? `ما عندي أماكن داخل ${areaLabel(outside)}، فهذا أقرب خيار • ` : "") + reasonFor(place, step, anchorLabel, distKm, wanted, input),
       distanceFromPrevKm: distKm,
       anchorLabel,
     });

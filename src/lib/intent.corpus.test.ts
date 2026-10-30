@@ -149,6 +149,17 @@ describe("each stop keeps its own district", () => {
     const a = parseWithRules("كوفي بالياسمين وبعده مطعم بالعليا", empty).action;
     expect(a).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe", district: "الياسمين" }, { category: "restaurant", district: "العليا" }] } });
   });
+
+  it("governorates: «كوفي بالدرعية ومطعم بالخرج»", () => {
+    const a = parseWithRules("ابي كوفي بالدرعية ومطعم بالخرج", empty).action;
+    expect(a).toMatchObject({ type: "plan", request: { steps: [{ category: "cafe", district: "الدرعية" }, { category: "restaurant", district: "الخرج" }] } });
+  });
+
+  it("«مرات» is a governorate only as «محافظة مرات»", () => {
+    expect(parseWithRules("ابي مطعم في محافظة مرات", empty).action).toMatchObject({ request: { steps: [{ category: "restaurant", district: "مرات" }] } });
+    const a = parseWithRules("ابي مطعم مرات احس ابي برجر", empty).action;
+    expect(a.type === "plan" && a.request.steps.every((s) => !s.district)).toBe(true);
+  });
 });
 
 describe("«I don't like this» replaces the place it points at", () => {

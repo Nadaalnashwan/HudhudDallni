@@ -1,5 +1,5 @@
 import "server-only";
-import { CATEGORY_META, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
+import { CATEGORY_META, DISTRICTS, GOVERNORATES, RIYADH_AREAS, SUBCATEGORY_META, TAG_LABELS } from "../catalog";
 import { parseWithRules, WHAT_QUESTION, type IntentContext } from "../intent";
 import { MAX_STOPS } from "../planEdits";
 import type { AssistantAction, AssistantResponse, Category, PlaceTag, Preferences, Subcategory } from "../types";
@@ -52,6 +52,7 @@ ${SUB_DOC}
 T: ${TAGS.map((t) => `${t}=${TAG_LABELS[t]}`).join("، ")}
 الأحياء: ${Object.keys(DISTRICTS).join("، ")}
 أحياء ثانية (فقط في district داخل STEP): ${Object.keys(RIYADH_AREAS).join("، ")}
+محافظات منطقة الرياض (فقط في district داخل STEP): ${Object.keys(GOVERNORATES).join("، ")}
 
 LEARNED = تفضيلات ثابتة صرّح فيها المستخدم عن نفسه فقط (مثل "دايم أحب الأماكن الهادية"، "ما أحب الزحمة"، "ميزانيتي محدودة"، "أحب الأكل الهندي")، وإلا null:
 {"likes":[T],"avoid":["نص قصير"],"cuisines":[S للمطاعم],"cafeTypes":[S للكوفي],"neighborhoods":["حي"],"budget":"low" أو null,"distance":"distance|rating" أو null}

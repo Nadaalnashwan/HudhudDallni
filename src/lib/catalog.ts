@@ -157,8 +157,36 @@ export const RIYADH_AREAS: Record<string, LatLng> = {
   "الملك فيصل": { lat: 24.7622, lng: 46.775 },
 };
 
-/** Center of a dataset district or another known Riyadh neighborhood. */
-export const areaCenter = (name?: string): LatLng | undefined => (name ? DISTRICTS[name] ?? RIYADH_AREAS[name] : undefined);
+/** Governorates of Riyadh Region ("مطعم بالخرج"), centered on each one's seat town (OpenStreetMap place nodes). */
+export const GOVERNORATES: Record<string, LatLng> = {
+  الدرعية: { lat: 24.7483, lng: 46.5718 },
+  الدوادمي: { lat: 24.5182, lng: 44.3991 },
+  المجمعة: { lat: 25.9039, lng: 45.3456 },
+  "وادي الدواسر": { lat: 20.4825, lng: 44.7673 },
+  الأفلاج: { lat: 22.2929, lng: 46.7172 },
+  ضرما: { lat: 24.5955, lng: 46.1337 },
+  المزاحمية: { lat: 24.4728, lng: 46.2706 },
+  رماح: { lat: 25.5697, lng: 47.1567 },
+  ثادق: { lat: 25.281, lng: 45.863 },
+  الحريق: { lat: 23.6336, lng: 46.5139 },
+  الغاط: { lat: 26.0286, lng: 44.9508 },
+  مرات: { lat: 25.0717, lng: 45.4572 },
+  الخرج: { lat: 24.1517, lng: 47.3102 },
+  القويعية: { lat: 24.0651, lng: 45.2844 },
+  الزلفي: { lat: 26.2996, lng: 44.8152 },
+  شقراء: { lat: 25.2483, lng: 45.2528 },
+  "حوطة بني تميم": { lat: 23.4875, lng: 46.8787 },
+  عفيف: { lat: 23.9024, lng: 42.9151 },
+  السليل: { lat: 20.4597, lng: 45.5744 },
+  حريملاء: { lat: 25.1267, lng: 46.1225 },
+  الدلم: { lat: 23.9969, lng: 47.165 },
+};
+
+/** Center of a dataset district, another known Riyadh neighborhood, or a Riyadh Region governorate. */
+export const areaCenter = (name?: string): LatLng | undefined => (name ? DISTRICTS[name] ?? RIYADH_AREAS[name] ?? GOVERNORATES[name] : undefined);
+
+/** "حي النسيم" / "محافظة الخرج". */
+export const areaLabel = (name: string) => `${GOVERNORATES[name] ? "محافظة" : "حي"} ${name}`;
 
 /** Riyadh neighborhoods in the hudhud_demo dataset; centers are the mean of its seeded coordinates. */
 export const DISTRICTS: Record<string, LatLng> = {

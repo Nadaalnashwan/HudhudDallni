@@ -1,4 +1,4 @@
-import { CATEGORY_META, DISTRICTS, RIYADH_AREAS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
+import { CATEGORY_META, DISTRICTS, GOVERNORATES, RIYADH_AREAS, SUBCATEGORY_META, subcategoriesOf, TAG_LABELS } from "./catalog";
 import { RIYADH_CENTER } from "./geo";
 import type { AssistantResponse, Category, ConstraintEdit, ParsedRequest, PlaceTag, Priority, StepSpec, Subcategory } from "./types";
 
@@ -182,10 +182,16 @@ const SPREAD =
   /(^|\s)(ال)?(حي|احياء)\s*(مختلف|مختلفه|ثاني|ثانيه|غير|متفرق|متفرقه)|(مختلف|مختلفه|متفرق|متفرقه|مختلفين)\s*(ال)?(حي|احياء)|كل\s*(واحد|وحده|مكان|محطه)\s*(من|في|ب)\s*حي|(مو|مب|ما|لا)\s*(تكون\s*)?(كلها\s*)?(من|في|ب)\s*نفس\s*(ال)?حي|different (neighbou?rhoods?|districts?|areas?)/;
 
 // Neighborhood names that are also everyday words or place names ("أكاديمية طويق"، "وزارات").
-const AREA_CLASHES = new Set(["طويق", "الوزارات", "بدر", "النخيل", "الحمراء"]);
-/** A dataset district, else another Riyadh neighborhood named in full ("بالنسيم"، "حي الملز"). */
+const AREA_CLASHES = new Set(["طويق", "الوزارات", "بدر", "النخيل", "الحمراء", "مرات"]);
+const AREAS = [...Object.keys(RIYADH_AREAS), ...Object.keys(GOVERNORATES)];
+/** A dataset district, else another Riyadh neighborhood or governorate named in full ("بالنسيم"، "حي الملز"، "بالخرج"). */
 function findArea(text: string): string | undefined {
-  return findDistrict(text) ?? Object.keys(RIYADH_AREAS).find((a) => !AREA_CLASHES.has(a) && new RegExp(PREFIX + normalize(a).replace(/^ال/, "(?:ال)?") + "(?![\\u0621-\\u064A])").test(text));
+  return (
+    findDistrict(text) ??
+    AREAS.find((a) => !AREA_CLASHES.has(a) && new RegExp(PREFIX + normalize(a).replace(/^ال/, "(?:ال)?") + "(?![\\u0621-\\u064A])").test(text)) ??
+    // "مرات" is also "times" ("مرات كثير"), so only "محافظة مرات" names it
+    (/محافظ[هة] مرات/.test(text) ? "مرات" : undefined)
+  );
 }
 
 function findDistrict(text: string): string | undefined {
